@@ -15,6 +15,7 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    // The container image build sets VITE_SOURCEMAP=false to leave source maps out.
+    sourcemap: process.env.VITE_SOURCEMAP !== 'false',
   },
 });

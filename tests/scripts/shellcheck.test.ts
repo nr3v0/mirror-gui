@@ -9,7 +9,6 @@ const execAsync = promisify(exec);
 const SCRIPTS = [
   'mirror-gui.sh',
   'clean-stale-ports.sh',
-  'entrypoint.sh',
   'local-build.sh',
   'cron-build.sh',
   'build-for-quay/build-for-quay.sh',

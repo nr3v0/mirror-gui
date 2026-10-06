@@ -60,6 +60,9 @@ func main() {
 
 func serve() error {
 	cfg := server.ConfigFromEnv()
+	if err := dropPrivileges(cfg); err != nil {
+		return err
+	}
 	srv := server.New(cfg)
 	srv.ClearOperationHistory()
 	srv.LogStartup()

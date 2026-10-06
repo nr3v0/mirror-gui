@@ -26,14 +26,14 @@ All tests run automatically on every push and pull request via the GitHub Action
 
 ### Go tests (`internal/server/`, `internal/catalogmeta/`)
 
-Tests use only the standard library. API tests drive the real `http.Handler` with `net/http/httptest`; each test gets a fresh server with temporary storage and the catalog fixture in `tests/fixtures/catalog-data/`. Tests that run operations or catalog syncs put a fake `oc-mirror` or `oc` script first on `PATH`.
+Tests use only the standard library. API tests drive the real `http.Handler` with `net/http/httptest`; each test gets a fresh server with temporary storage and the catalog fixture in `tests/fixtures/catalog-data/`. Tests that run operations put a fake `oc-mirror` script first on `PATH`; catalog sync tests pull multi-arch catalog images from an in-memory OCI registry (`internal/catalogmeta/catalogtest`).
 
 
 | File                                     | Description                                                                                                                                                       |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `internal/server/utils_test.go`          | Version parsing and sorting, catalog name resolution, channel extraction/normalization, path availability, optional oc-mirror flag validation, JSON-to-YAML conversion, catalog sync diff |
-| `internal/server/api_test.go`            | Every REST endpoint: health, catalogs, operators/channels/versions/dependencies, config save/upload/download/delete, mirror folders, pull secret, registry verification (including the token flow against a local TLS registry), system info/status/paths, cache cleanup, operation list/stats/start/stop/delete/logs/details, SSE log streaming, oc-mirror success/failure/stop handling, catalog sync (missing `oc` and a full run with a fake `oc`), SPA serving, CORS |
-| `internal/catalogmeta/catalogmeta_test.go` | FBC metadata generation compared against golden files produced by the former Python implementation (`testdata/`), version ordering, bundle-name versions, `catalog-info.json` / `catalog-index.json` output, `Sync` with a fake `oc` (registry config, retries, partial failure) |
+| `internal/server/api_test.go`            | Every REST endpoint: health, catalogs, operators/channels/versions/dependencies, config save/upload/download/delete, mirror folders, pull secret, registry verification (including the token flow against a local TLS registry), system info/status/paths, cache cleanup, operation list/stats/start/stop/delete/logs/details, SSE log streaming, oc-mirror success/failure/stop handling, catalog sync (missing pull secret and a full run against an in-memory registry), SPA serving, CORS |
+| `internal/catalogmeta/catalogmeta_test.go` | FBC metadata generation compared against golden files produced by the former Python implementation (`testdata/`), version ordering, bundle-name versions, `catalog-info.json` / `catalog-index.json` output, auth-file keychain, `Sync` against an in-memory registry (linux/amd64 selection, digests, retries, partial failure) |
 
 
 ---
@@ -82,7 +82,6 @@ Playwright reports are uploaded as CI artifacts (retained 14 days).
 Runs [ShellCheck](https://www.shellcheck.net/) with `-S error` (error-level severity) on all shell scripts:
 
 - `mirror-gui.sh`
-- `entrypoint.sh`
 - `local-build.sh`
 - `sync-catalogs.sh`
 

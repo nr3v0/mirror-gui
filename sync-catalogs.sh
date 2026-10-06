@@ -3,12 +3,12 @@
 # Syncs operator catalog metadata from registry.redhat.io for all supported OCP versions.
 # The implementation is `mirror-gui sync-catalogs` (internal/catalogmeta); this wrapper
 # keeps the historical entry point used by local-build.sh.
-# Requires: oc CLI, and Go (to build the tool) or a mirror-gui binary via MIRROR_GUI_BIN.
+# Requires: Go (to build the tool) or a mirror-gui binary via MIRROR_GUI_BIN.
 #
 # Auth resolution (in priority order):
 #   1. PULL_SECRET_PATH env var pointing to an existing file
 #   2. REGISTRY_AUTH_FILE env var pointing to an existing file
-#   3. No --registry-config flag (oc uses default credentials, e.g. ~/.docker/config.json)
+#   3. Default container credentials (e.g. ~/.docker/config.json, podman auth.json)
 #
 # Environment variables:
 #   CATALOG_DATA_DIR   - output directory (default: ./catalog-data)

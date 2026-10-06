@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nr3v0/mirror-gui/internal/catalogmeta/catalogtest"
 )
 
 const validConfigYAML = `kind: ImageSetConfiguration
@@ -928,42 +930,21 @@ func TestCatalogSyncEndpoints(t *testing.T) {
 		t.Errorf("message = %v", res.obj()["message"])
 	}
 
-	e.expectStatus(e.do("POST", "/api/catalogs/sync", nil), 400)
-	e.expectStatus(e.do("POST", "/api/pull-secret", map[string]any{"content": dummyPullSecret}), 200)
-	t.Setenv("PATH", t.TempDir())
 	res = e.do("POST", "/api/catalogs/sync", nil)
-	e.expectStatus(res, 500)
-	if !strings.Contains(errorText(res), "oc CLI is missing") {
+	e.expectStatus(res, 400)
+	if !strings.Contains(errorText(res), "Pull secret not configured") {
 		t.Errorf("error = %q", errorText(res))
 	}
 }
 
-// installFakeOC puts a fake `oc` first on PATH whose `image extract` copies the
-// catalogmeta test snapshot and whose `image info` prints a digest.
-func installFakeOC(t *testing.T) {
-	t.Helper()
+func TestCatalogSyncRun(t *testing.T) {
+	e := newTestEnv(t)
 	configs, err := filepath.Abs("../catalogmeta/testdata/snapshot/configs")
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := t.TempDir()
-	script := `#!/bin/sh
-dest=""
-while [ $# -gt 0 ]; do
-  [ "$1" = "--path" ] && { dest="${2#/configs/:}"; shift; }
-  shift
-done
-if [ -n "$dest" ]; then cp -r "` + configs + `"/. "$dest"/; else echo '{"digest": "sha256:fake"}'; fi
-`
-	if err := os.WriteFile(filepath.Join(dir, "oc"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-}
-
-func TestCatalogSyncRun(t *testing.T) {
-	e := newTestEnv(t)
-	installFakeOC(t)
+	host, digest := catalogtest.Serve(t, configs, "redhat/redhat-operator-index:v4.21")
+	e.srv.syncRegistry = host
 	e.srv.syncVersions = []string{"4.21"}
 	e.srv.syncCatalogTypes = []string{"redhat-operator-index"}
 	e.srv.syncRetryDelay = 0
@@ -1014,7 +995,7 @@ func TestCatalogSyncRun(t *testing.T) {
 		t.Errorf("dependencies after sync = %v", res.obj())
 	}
 	res = e.do("GET", "/api/catalogs", nil)
-	if cat := res.arr()[0].(map[string]any); cat["digest"] != "sha256:fake" || cat["syncedAt"] == nil {
+	if cat := res.arr()[0].(map[string]any); cat["digest"] != digest || cat["syncedAt"] == nil {
 		t.Errorf("catalog after sync = %v", cat)
 	}
 

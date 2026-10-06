@@ -33,7 +33,6 @@ The application runs as a containerized service (Podman) and wraps oc-mirror v2 
 ### Prerequisites
 
 - **Podman** (5.0+)
-- **oc client** (for building) - download from [mirror.openshift.com](https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/)
 - **Go** (version in `go.mod`) — `sync-catalogs.sh` builds and runs the catalog sync tool (`mirror-gui sync-catalogs`)
 - **Pull secret** from [console.redhat.com](https://console.redhat.com/openshift/downloads#tool-pull-secret) - save to `pull-secret/pull-secret.json` before building, or run `podman login registry.redhat.io`
 

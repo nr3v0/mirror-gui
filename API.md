@@ -858,7 +858,7 @@ Delete all files in the cache directory.
 ### Catalog Sync
 
 #### POST /api/catalogs/sync
-Trigger a full operator catalog sync from registry.redhat.io. Requires a pull secret. Runs the catalog sync inside the server process (using `oc image extract`) in the background and streams progress to the sync status endpoint. Returns 500 if the `oc` CLI is not installed.
+Trigger a full operator catalog sync from registry.redhat.io. Requires a pull secret. Runs the catalog sync inside the server process in the background (pulling the catalog images directly from the registry) and streams progress to the sync status endpoint.
 
 **Response:**
 ```json

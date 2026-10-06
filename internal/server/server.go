@@ -110,7 +110,9 @@ type Server struct {
 	syncMu    sync.Mutex
 	syncState catalogSyncState
 
-	// Catalogs synced by POST /api/catalogs/sync, and the delay between extraction retries.
+	// Catalogs synced by POST /api/catalogs/sync, the registry they are pulled
+	// from (empty means registry.redhat.io), and the delay between retries.
+	syncRegistry     string
 	syncVersions     []string
 	syncCatalogTypes []string
 	syncRetryDelay   time.Duration

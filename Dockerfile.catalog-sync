@@ -54,7 +54,7 @@ COPY internal ./internal
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/mirror-gui ./cmd/mirror-gui
 
 # --- Stage 3: Extract and process catalog data ---
-FROM registry.access.redhat.com/ubi9/ubi-minimal AS processor
+FROM registry.access.redhat.com/ubi9/ubi-micro AS processor
 
 USER root
 
@@ -93,5 +93,5 @@ RUN mirror-gui catalog-metadata finalize \
         --ocp-versions "4.16 4.17 4.18 4.19 4.20 4.21 4.22" \
         --catalog-types "redhat-operator-index certified-operator-index community-operator-index" && \
     echo "--- catalog-data contents ---" && \
-    find ./catalog-data-synced -type f && \
+    ls -R ./catalog-data-synced && \
     cat ./catalog-data-synced/catalog-index.json

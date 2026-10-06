@@ -1,15 +1,11 @@
 package catalogmeta
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 )
@@ -97,7 +93,8 @@ func WriteIndex(dataDir string, ocpVersions, catalogTypes []string) error {
 // SyncOptions configures Sync.
 type SyncOptions struct {
 	DataDir        string
-	RegistryConfig string // auth file passed to oc; empty uses oc's default credentials
+	RegistryConfig string // docker/podman auth file; empty uses the default credential locations
+	Registry       string // registry to pull catalogs from; default registry.redhat.io
 	Parallel       int
 	OCPVersions    []string
 	CatalogTypes   []string
@@ -117,6 +114,9 @@ type SyncResult struct {
 }
 
 func (o *SyncOptions) defaults() {
+	if o.Registry == "" {
+		o.Registry = "registry.redhat.io"
+	}
 	if o.Parallel < 1 {
 		o.Parallel = 3
 	}
@@ -144,82 +144,59 @@ func ResolveRegistryConfig(candidates ...string) string {
 	return ""
 }
 
-// ocImage builds `oc image <subcommand> [--registry-config=...] args...`.
-func (o *SyncOptions) ocImage(subcommand string, args ...string) []string {
-	out := []string{"image", subcommand}
-	if o.RegistryConfig != "" {
-		out = append(out, "--registry-config="+o.RegistryConfig)
-	}
-	return append(out, args...)
-}
-
-func runOC(ctx context.Context, args []string) ([]byte, error) {
-	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, "oc", args...)
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return nil, fmt.Errorf("%w: %s", err, lastLine(msg))
-		}
-		return nil, err
-	}
-	return stdout.Bytes(), nil
-}
-
-func lastLine(s string) string {
-	lines := strings.Split(s, "\n")
-	return strings.TrimSpace(lines[len(lines)-1])
-}
-
-// imageDigest returns the linux/amd64 manifest digest of an image, or "unknown".
-func (o *SyncOptions) imageDigest(ctx context.Context, url string) string {
-	out, err := runOC(ctx, o.ocImage("info", "--filter-by-os=linux/amd64", "-o", "json", url))
+// extractOnce pulls a catalog image and writes its /configs into dest. It
+// returns the image's manifest digest, or "unknown" if it cannot be computed.
+func (o *SyncOptions) extractOnce(ctx context.Context, ref, dest string) (string, error) {
+	img, err := o.pullImage(ctx, ref)
 	if err != nil {
-		return "unknown"
+		return "", err
 	}
-	var info struct {
-		Digest string `json:"digest"`
+	if err := extractConfigs(img, dest); err != nil {
+		return "", err
 	}
-	if json.Unmarshal(out, &info) != nil || info.Digest == "" {
-		return "unknown"
+	digest, err := img.Digest()
+	if err != nil {
+		return "unknown", nil
 	}
-	return info.Digest
+	return digest.String(), nil
 }
 
-// extract copies /configs from a catalog image into the snapshot directory, retrying on failure.
-func (o *SyncOptions) extract(ctx context.Context, catalogType, ocpVersion string) error {
-	url := CatalogURL(catalogType, "v"+ocpVersion)
+// extract copies /configs from a catalog image into the snapshot directory,
+// retrying on failure, and returns the image digest.
+func (o *SyncOptions) extract(ctx context.Context, catalogType, ocpVersion string) (string, error) {
+	ref := fmt.Sprintf("%s/redhat/%s:v%s", o.Registry, catalogType, ocpVersion)
 	configs := filepath.Join(SnapshotDir(o.DataDir, catalogType, ocpVersion), "configs")
 	var lastErr error
 	for attempt := 1; attempt <= o.Attempts; attempt++ {
 		o.Log(fmt.Sprintf("Extracting %s v%s (attempt %d)...", catalogType, ocpVersion, attempt))
+		os.RemoveAll(configs)
 		if err := os.MkdirAll(configs, 0o755); err != nil {
-			return err
+			return "", err
 		}
-		_, lastErr = runOC(ctx, o.ocImage("extract", "--path", "/configs/:"+configs, url))
-		if lastErr == nil {
-			return nil
+		digest, err := o.extractOnce(ctx, ref, configs)
+		if err == nil {
+			return digest, nil
 		}
+		lastErr = err
 		os.RemoveAll(configs)
 		if attempt < o.Attempts {
-			o.Log(fmt.Sprintf("Extracting %s v%s attempt %d failed: %v", catalogType, ocpVersion, attempt, lastErr))
+			o.Log(fmt.Sprintf("Extracting %s v%s attempt %d failed: %v", catalogType, ocpVersion, attempt, err))
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return "", ctx.Err()
 			case <-time.After(o.RetryDelay):
 			}
 		}
 	}
-	return fmt.Errorf("after %d attempts: %w", o.Attempts, lastErr)
+	return "", fmt.Errorf("after %d attempts: %w", o.Attempts, lastErr)
 }
 
 func (o *SyncOptions) syncOne(ctx context.Context, catalogType, ocpVersion string) bool {
-	url := CatalogURL(catalogType, "v"+ocpVersion)
-	if err := o.extract(ctx, catalogType, ocpVersion); err != nil {
-		o.Log(fmt.Sprintf("ERROR: Failed to extract %s %v", url, err))
+	digest, err := o.extract(ctx, catalogType, ocpVersion)
+	if err != nil {
+		o.Log(fmt.Sprintf("ERROR: Failed to extract %s %v", CatalogURL(catalogType, "v"+ocpVersion), err))
 		return false
 	}
-	digest := o.imageDigest(ctx, url)
 	if _, err := FinalizeSnapshot(o.DataDir, catalogType, ocpVersion, digest, o.Log); err != nil {
 		o.Log(fmt.Sprintf("ERROR: Failed to generate metadata for %s v%s: %v", catalogType, ocpVersion, err))
 		return false
@@ -227,21 +204,21 @@ func (o *SyncOptions) syncOne(ctx context.Context, catalogType, ocpVersion strin
 	return true
 }
 
-// Sync extracts every catalog with `oc image extract`, generates its metadata
+// Sync pulls every catalog image, extracts its /configs, generates its metadata
 // and rewrites catalog-index.json. It returns an error when any catalog failed;
 // catalogs that succeeded are still written.
 func Sync(ctx context.Context, opts SyncOptions) (SyncResult, error) {
 	opts.defaults()
-	if _, err := exec.LookPath("oc"); err != nil {
-		return SyncResult{}, errors.New("the oc CLI is not available in PATH")
-	}
 	if err := os.MkdirAll(opts.DataDir, 0o755); err != nil {
 		return SyncResult{}, err
 	}
 	if opts.RegistryConfig != "" {
+		if _, err := loadAuthFile(opts.RegistryConfig); err != nil {
+			return SyncResult{}, fmt.Errorf("reading registry config: %w", err)
+		}
 		opts.Log("Using registry config: " + opts.RegistryConfig)
 	} else {
-		opts.Log("No explicit registry config; oc will use default credentials")
+		opts.Log("No explicit registry config; using default container registry credentials")
 	}
 	opts.Log("Output directory: " + opts.DataDir)
 

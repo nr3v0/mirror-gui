@@ -16,12 +16,13 @@ The backend spawns `oc-mirror` as a child process to perform mirror-to-disk oper
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| Server entrypoint | `cmd/mirror-gui/main.go` | Reads configuration from the environment and starts the HTTP server |
+| Server entrypoint | `cmd/mirror-gui/main.go` | CLI subcommands; reads configuration from the environment and starts the HTTP server |
+| Container start-up | `cmd/mirror-gui/runas_linux.go` | In the image: fixes data volume ownership as root, then switches to uid 1001 |
 | Routes and middleware | `internal/server/server.go` | Configuration, route table, CORS, JSON helpers |
 | Operations | `internal/server/operations.go` | Starting/stopping oc-mirror, operation records, logs, SSE log streaming |
 | Catalog data | `internal/server/catalog.go` | Pre-fetched catalog metadata, operators, channels, versions, dependencies |
 | Catalog sync API | `internal/server/catalogsync.go` | Runs the catalog sync in the background and reports progress/diff |
-| Catalog metadata | `internal/catalogmeta/` | FBC parsing, metadata generation, `oc image extract` sync (`mirror-gui sync-catalogs`, `mirror-gui catalog-metadata`) |
+| Catalog metadata | `internal/catalogmeta/` | FBC parsing, metadata generation, catalog image pulls (go-containerregistry) (`mirror-gui sync-catalogs`, `mirror-gui catalog-metadata`) |
 | Configs | `internal/server/configs.go` | ImageSetConfiguration save/upload/download/delete and validation |
 | Pull secret and registries | `internal/server/pullsecret.go` | Pull secret CRUD, registry authentication checks |
 | System | `internal/server/system.go` | System info/health, mirror folders, cache cleanup, frontend serving |

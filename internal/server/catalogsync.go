@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -121,10 +120,6 @@ func (s *Server) handleCatalogSync(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorBody("Pull secret not configured. Please add a pull secret in the Pull Secret tab first."))
 		return
 	}
-	if _, err := exec.LookPath("oc"); err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorBody("Catalog sync is not available. The oc CLI is missing from this installation."))
-		return
-	}
 
 	s.syncState = s.newCatalogSyncState()
 	s.syncState.Status = "running"
@@ -137,6 +132,7 @@ func (s *Server) handleCatalogSync(w http.ResponseWriter, _ *http.Request) {
 	opts := catalogmeta.SyncOptions{
 		DataDir:        s.cfg.RuntimeCatalogDir,
 		RegistryConfig: s.cfg.AuthfilePath,
+		Registry:       s.syncRegistry,
 		Parallel:       3,
 		OCPVersions:    s.syncVersions,
 		CatalogTypes:   s.syncCatalogTypes,

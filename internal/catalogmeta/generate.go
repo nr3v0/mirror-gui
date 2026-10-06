@@ -1,6 +1,6 @@
 // Package catalogmeta turns extracted operator File-Based Catalog (FBC) configs
 // into the operators.json / dependencies.json / catalog-index.json metadata the
-// server serves, and syncs that metadata from registry.redhat.io with `oc`.
+// server serves, and syncs that metadata from registry.redhat.io.
 package catalogmeta
 
 import (

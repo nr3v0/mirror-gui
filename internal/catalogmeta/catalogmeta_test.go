@@ -9,6 +9,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/nr3v0/mirror-gui/internal/catalogmeta/catalogtest"
 )
 
 // The expected-*.json golden files were produced by the former Python
@@ -158,48 +162,21 @@ func TestFinalizeSnapshotAndIndex(t *testing.T) {
 	}
 }
 
-// installFakeOC puts a fake `oc` on PATH. `oc image extract` copies the test
-// snapshot configs (or fails for catalogs whose URL contains $FAKE_OC_FAIL);
-// `oc image info` prints a digest. Every invocation is appended to $FAKE_OC_LOG.
-func installFakeOC(t *testing.T, fail string) string {
-	t.Helper()
-	dir := t.TempDir()
-	logFile := filepath.Join(dir, "calls.log")
-	configs, _ := filepath.Abs("testdata/snapshot/configs")
-	script := `#!/bin/sh
-echo "$@" >> "$FAKE_OC_LOG"
-url=""; dest=""
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --path) dest="${2#/configs/:}"; shift ;;
-    registry.*) url="$1" ;;
-  esac
-  shift
-done
-case "$url" in *"$FAKE_OC_FAIL"*) [ -n "$FAKE_OC_FAIL" ] && { echo "error: unauthorized" >&2; exit 1; } ;; esac
-if [ -n "$dest" ]; then cp -r "$FAKE_OC_CONFIGS"/. "$dest"/; else echo '{"digest": "sha256:fake"}'; fi
-`
-	if err := os.WriteFile(filepath.Join(dir, "oc"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("FAKE_OC_LOG", logFile)
-	t.Setenv("FAKE_OC_CONFIGS", configs)
-	t.Setenv("FAKE_OC_FAIL", fail)
-	return logFile
-}
-
 func TestSync(t *testing.T) {
-	calls := installFakeOC(t, "community-operator-index:v4.21")
+	configs, _ := filepath.Abs("testdata/snapshot/configs")
+	// community-operator-index:v4.21 is not pushed, so that catalog fails.
+	host, digest := catalogtest.Serve(t, configs,
+		"redhat/redhat-operator-index:v4.20", "redhat/redhat-operator-index:v4.21", "redhat/community-operator-index:v4.20")
 	dataDir := t.TempDir()
 	authFile := filepath.Join(t.TempDir(), "auth.json")
-	os.WriteFile(authFile, []byte("{}"), 0o600)
+	os.WriteFile(authFile, []byte(`{"auths":{"registry.example.com":{"auth":"dXNlcjpwYXNz"}}}`), 0o600)
 
 	var mu sync.Mutex
 	var lines []string
 	started, done := map[string]bool{}, map[string]bool{}
 	result, err := Sync(context.Background(), SyncOptions{
 		DataDir:        dataDir,
+		Registry:       host,
 		RegistryConfig: ResolveRegistryConfig("/does/not/exist", authFile),
 		Parallel:       2,
 		OCPVersions:    []string{"4.20", "4.21"},
@@ -218,9 +195,8 @@ func TestSync(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 	for _, want := range []string{
 		"Using registry config: " + authFile,
-		"Extracting community-operator-index v4.21 (attempt 3)...",
+		"Extracting community-operator-index v4.21 attempt 2 failed:",
 		"ERROR: Failed to extract registry.redhat.io/redhat/community-operator-index:v4.21 after 3 attempts",
-		"error: unauthorized",
 		"Completed: 3/4 catalogs successful, 1 failed",
 	} {
 		if !strings.Contains(joined, want) {
@@ -230,27 +206,57 @@ func TestSync(t *testing.T) {
 
 	var index catalogIndex
 	readJSON(t, filepath.Join(dataDir, "catalog-index.json"), &index)
-	if len(index.Catalogs) != 3 || index.Catalogs[0].CatalogType != "redhat-operator-index" || index.Catalogs[0].Digest != "sha256:fake" {
-		t.Errorf("index = %+v", index)
+	if len(index.Catalogs) != 3 || index.Catalogs[0].CatalogType != "redhat-operator-index" ||
+		index.Catalogs[0].Digest != digest || index.Catalogs[0].CatalogURL != "registry.redhat.io/redhat/redhat-operator-index:v4.20" {
+		t.Errorf("index = %+v (want digest %s)", index, digest)
 	}
+	// The extracted configs must produce the same metadata as the source snapshot.
 	var operators []Operator
 	readJSON(t, filepath.Join(SnapshotDir(dataDir, "redhat-operator-index", "4.21"), "operators.json"), &operators)
-	if len(operators) != 7 || operators[0].Catalog != "redhat-operator-index" || operators[0].OCPVersion != "v4.21" {
+	expected, _, _ := GenerateSnapshot("testdata/snapshot", "redhat-operator-index", "v4.21")
+	if !reflect.DeepEqual(operators, expected) {
 		t.Errorf("operators = %+v", operators)
 	}
 	if _, err := os.Stat(filepath.Join(SnapshotDir(dataDir, "community-operator-index", "4.21"), "configs")); !os.IsNotExist(err) {
 		t.Error("failed extraction left a configs directory behind")
 	}
+}
 
-	callLog, _ := os.ReadFile(calls)
-	if !strings.Contains(string(callLog), "image extract --registry-config="+authFile+" --path /configs/:") {
-		t.Errorf("oc calls:\n%s", callLog)
+func TestSyncRejectsBadAuthFile(t *testing.T) {
+	authFile := filepath.Join(t.TempDir(), "auth.json")
+	os.WriteFile(authFile, []byte("not json"), 0o600)
+	if _, err := Sync(context.Background(), SyncOptions{DataDir: t.TempDir(), RegistryConfig: authFile}); err == nil ||
+		!strings.Contains(err.Error(), "reading registry config") {
+		t.Errorf("err = %v", err)
 	}
 }
 
-func TestSyncWithoutOC(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	if _, err := Sync(context.Background(), SyncOptions{DataDir: t.TempDir()}); err == nil || !strings.Contains(err.Error(), "oc CLI") {
-		t.Errorf("err = %v", err)
+func TestAuthFileKeychain(t *testing.T) {
+	authFile := filepath.Join(t.TempDir(), "auth.json")
+	os.WriteFile(authFile, []byte(`{"auths":{
+		"registry.redhat.io":{"auth":"dXNlcjpwYXNz"},
+		"https://quay.io/v1/":{"username":"bot","password":"secret"}}}`), 0o600)
+	keychain, err := loadAuthFile(authFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]authn.AuthConfig{
+		"registry.redhat.io": {Username: "user", Password: "pass"},
+		"quay.io":            {Username: "bot", Password: "secret"},
+		"docker.io":          {},
+	}
+	for host, want := range cases {
+		reg, _ := name.NewRegistry(host)
+		auth, err := keychain.Resolve(reg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := auth.Authorization()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Username != want.Username || got.Password != want.Password {
+			t.Errorf("%s: auth = %+v, want %+v", host, *got, want)
+		}
 	}
 }

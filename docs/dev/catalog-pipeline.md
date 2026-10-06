@@ -4,7 +4,7 @@ Mirror-GUI uses pre-fetched operator catalog metadata rather than querying regis
 
 ## How it works
 
-1. The catalog sync (`internal/catalogmeta`) runs `oc image extract` to copy the File-Based Catalog (FBC) configs out of the Red Hat operator index images for each supported OCP version (4.16–4.22) and catalog type (Red Hat, Certified, Community), up to three at a time with three attempts each, and records each image's digest with `oc image info`. It runs in three places:
+1. The catalog sync (`internal/catalogmeta`) pulls the linux/amd64 image (with go-containerregistry, using the pull secret or the default docker/podman credentials) and copies the File-Based Catalog (FBC) `/configs` out of the Red Hat operator index images for each supported OCP version (4.16–4.22) and catalog type (Red Hat, Certified, Community), up to three at a time with three attempts each, and records each image's manifest digest. It runs in three places:
    - in the server, when a sync is started from the UI (`POST /api/catalogs/sync`);
    - on the host, via `./sync-catalogs.sh` (a wrapper around `mirror-gui sync-catalogs`), which `local-build.sh` runs before every image build;
    - in CI, where `Dockerfile.catalog-sync` pulls the index images with `FROM` and runs `mirror-gui catalog-metadata finalize` on the copied configs.

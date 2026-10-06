@@ -33,3 +33,10 @@ data/mirrors/*
 
 # Exclude raw catalog configs from the build context; runtime uses generated metadata only
 catalog-data/**/configs/
+
+# Not needed by any image build stage
+tests/
+playwright-report/
+test-results/
+.github/
+.cursor/
