@@ -1,0 +1,7 @@
+name: release-1.0
+package: split-operator
+entries:
+  - name: split-operator.v1.0.0
+  - name: split-operator.v1.0.0-2
+  - name: split-operator.v1.0.0-10
+  - name: split-operator.v1.0.0-rc1

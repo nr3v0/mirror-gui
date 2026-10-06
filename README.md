@@ -34,7 +34,7 @@ The application runs as a containerized service (Podman) and wraps oc-mirror v2 
 
 - **Podman** (5.0+)
 - **oc client** (for building) - download from [mirror.openshift.com](https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/)
-- **jq**, **Python 3**, and **PyYAML** — required by `sync-catalogs.sh` (`sudo dnf install -y jq python3 && pip3 install --user PyYAML`)
+- **Go** (version in `go.mod`) — `sync-catalogs.sh` builds and runs the catalog sync tool (`mirror-gui sync-catalogs`)
 - **Pull secret** from [console.redhat.com](https://console.redhat.com/openshift/downloads#tool-pull-secret) - save to `pull-secret/pull-secret.json` before building, or run `podman login registry.redhat.io`
 
 ### Clone the repository
@@ -142,23 +142,23 @@ Test documentation is available in [TESTS.md](TESTS.md).
 To run tests locally:
 
 ```bash
-npm test              # unit and integration tests (Vitest)
-npm run test:coverage # tests with coverage
-npm run test:e2e      # end-to-end tests (Playwright)
-npm run test:all      # all tests
-npm run lint          # ESLint
+go test ./...         # backend unit and API tests
+npm test              # script tests (Vitest)
+npm run test:e2e      # end-to-end tests (Playwright, headless Chromium)
+go vet ./...          # backend static checks
+npm run lint          # frontend ESLint
 ```
 
 ## Development
 
 ### Architecture
 
-Mirror-GUI is a TypeScript application with two main layers:
+Mirror-GUI has two main layers:
 
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
-| **Frontend** | React 18, PatternFly 6, Vite | Single-page application with visual config builder |
-| **Backend** | Express (Node.js 22), tsx | REST API server that wraps oc-mirror v2 CLI |
+| **Frontend** | React 18, TypeScript, PatternFly 6, Vite | Single-page application with visual config builder |
+| **Backend** | Go (`net/http`) | REST API server that wraps oc-mirror v2 CLI and serves the frontend |
 
 The backend spawns `oc-mirror` as a child process for mirror operations and streams logs via SSE. Operator catalog metadata is pre-fetched at build time (`sync-catalogs.sh`) and bundled into the container image for offline browsing.
 

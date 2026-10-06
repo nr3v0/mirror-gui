@@ -1,0 +1,6 @@
+{"schema":"olm.package","name":"standard-operator","defaultChannel":"stable"}
+{"schema":"olm.channel","package":"standard-operator","name":"stable","entries":[{"name":"standard-operator.v1.2.0"},{"name":"standard-operator.v1.10.0","replaces":"standard-operator.v1.2.0"}]}
+{"schema":"olm.channel","package":"standard-operator","name":"fast","entries":[{"name":"standard-operator.v2.0.0-rc.1"}]}
+{"schema":"olm.bundle","package":"standard-operator","name":"standard-operator.v1.2.0","properties":[{"type":"olm.package","value":{"packageName":"standard-operator","version":"1.2.0"}},{"type":"olm.package.required","value":{"packageName":"old-dep","versionRange":">=0.1.0"}}]}
+{"schema":"olm.bundle","package":"standard-operator","name":"standard-operator.v1.10.0","properties":[{"type":"olm.package","value":{"packageName":"standard-operator","version":"1.10.0"}},{"type":"olm.package.required","value":{"packageName":"zeta-dep","versionRange":">=1.0.0 <2.0.0"}},{"type":"olm.package.required","value":{"packageName":"alpha-dep"}},{"type":"olm.package.required","value":{"packageName":"alpha-dep"}},{"type":"olm.package.required","value":{"packageName":" "}}]}
+{"schema":"olm.bundle","package":"standard-operator","name":"standard-operator.v2.0.0-rc.1","properties":[{"type":"olm.package","value":{"packageName":"standard-operator","version":"2.0.0-rc.1"}}]}

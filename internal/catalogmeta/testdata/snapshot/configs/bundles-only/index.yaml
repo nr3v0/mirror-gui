@@ -1,0 +1,14 @@
+---
+schema: olm.bundle
+package: bundles-only-operator
+name: bundles-only-operator.v3.0.0
+properties:
+  - type: olm.package
+    value:
+      packageName: bundles-only-operator
+      version: 3.0.0
+---
+schema: olm.bundle
+package: bundles-only-operator
+name: bundles-only-operator.v2.9.9
+properties: []

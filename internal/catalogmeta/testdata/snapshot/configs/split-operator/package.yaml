@@ -1,0 +1,3 @@
+name: split-operator
+defaultChannel: release-1.0
+description: no schema field; recognised by file name

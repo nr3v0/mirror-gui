@@ -81,14 +81,15 @@ The oc-mirror cache can grow large over time. To clean it up:
 ### Tests failing locally
 
 ```bash
-# Ensure dependencies are installed
+# Backend tests, verbose
+go test -v ./...
+
+# Run a specific backend test
+go test ./internal/server -run TestConfigSaveAndValidation
+
+# Frontend/script tests
 npm ci
-
-# Run tests with verbose output
 npm test -- --reporter=verbose
-
-# Run a specific test file
-npx vitest run tests/unit/utils.test.ts
 ```
 
 ### E2E tests failing
@@ -102,8 +103,9 @@ npm run test:e2e
 
 ### Port conflicts in development
 
-The development server runs on port 3001 by default. If this conflicts:
+The backend runs on port 3001 and the Vite dev server on 3000 by default. If 3001 conflicts:
 
 ```bash
-PORT=3002 npm run dev
+PORT=3002 npm run dev:server
+MIRROR_GUI_API_URL=http://localhost:3002 npm run dev
 ```

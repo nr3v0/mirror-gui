@@ -1,0 +1,6 @@
+[
+  {"name": "split-operator.v1.0.0", "properties": []},
+  {"name": "split-operator.v1.0.0-2", "properties": [{"type": "olm.package.required", "value": {"packageName": "dep-from-latest", "versionRange": ">=3.0.0"}}]},
+  {"name": "split-operator.v1.0.0-10", "properties": [{"type": "olm.package.required", "value": {"packageName": "dep-from-latest", "versionRange": ">=4.0.0"}}]},
+  {"name": "split-operator.v1.0.0-rc1", "properties": []}
+]

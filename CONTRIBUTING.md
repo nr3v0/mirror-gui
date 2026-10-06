@@ -16,7 +16,7 @@ Welcome to our contributing guide! We are eager to receive contributions of all 
 
 ## What should I know before I get started?
 
-Mirror-GUI is a web-based interface for oc-mirror v2 that helps users manage OpenShift Container Platform mirroring operations. It is a TypeScript application with a React frontend (PatternFly 6) and an Express backend.
+Mirror-GUI is a web-based interface for oc-mirror v2 that helps users manage OpenShift Container Platform mirroring operations. It has a React/TypeScript frontend (PatternFly 6) and a Go backend.
 
 Before contributing, familiarize yourself with:
 - The [README](README.md) for project overview and setup
@@ -52,19 +52,18 @@ Please submit enhancement requests as GitHub Issues. When requesting enhancement
 #### Getting Started
 
 1. Fork the repository and clone it locally
-2. Install dependencies: `npm ci`
-3. Start the development server: `npm run dev`
-4. Run tests to verify your setup: `npm test`
-
-The development server runs the Express backend with Vite middleware for hot-reloading the React frontend. The server listens on port 3001 by default in development mode.
+2. Install Go (version in `go.mod`) and Node.js 22, then install frontend dependencies: `npm ci`
+3. Start the backend: `npm run dev:server` (runs `go run ./cmd/mirror-gui` on port 3001)
+4. In a second terminal, start the frontend: `npm run dev` (Vite with hot reload on port 3000, proxying `/api` to the backend)
+5. Run tests to verify your setup: `go test ./...` and `npm test`
 
 ### Pull Requests
 
 When submitting pull requests, please ensure the following:
-1. Include unit tests or integration tests for backend changes
+1. Include Go tests (`internal/server/*_test.go`) for backend changes
 2. Include E2E tests for new UI features or workflows
-3. Run `npm run lint` and fix any issues
-4. Run `npm test` to ensure all tests pass
+3. Run `gofmt`, `go vet ./...` and `npm run lint` and fix any issues
+4. Run `go test ./...` and `npm test` to ensure all tests pass
 5. Update documentation (API.md, TESTS.md, etc.) if applicable
 6. Follow existing code patterns and PatternFly conventions for UI components
 
@@ -84,11 +83,11 @@ Mirror-GUI has a comprehensive test suite covering unit, integration, and end-to
 To run tests locally:
 
 ```bash
-npm test              # unit and integration tests (Vitest)
-npm run test:coverage # tests with coverage report
+go test ./...         # backend unit and API tests
+npm test              # script tests (Vitest)
 npm run test:e2e      # end-to-end tests (Playwright, headless Chromium)
-npm run test:all      # all tests
-npm run lint          # ESLint
+go vet ./...          # backend static checks
+npm run lint          # frontend ESLint
 ```
 
-CI runs automatically on pull requests via GitHub Actions with four parallel jobs: unit/integration tests, E2E tests, shellcheck, and container image build validation.
+CI runs automatically on pull requests via GitHub Actions with five parallel jobs: Go backend tests, frontend build/lint, E2E tests, shellcheck, and container image build validation.

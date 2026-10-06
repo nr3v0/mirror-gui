@@ -1,64 +1,48 @@
 # Mirror-GUI Test Documentation
 
-All tests run automatically on every push and pull request via the GitHub Actions workflow `[.github/workflows/mirror-gui-tests.yml](.github/workflows/mirror-gui-tests.yml)`. The workflow contains four parallel jobs described below.
+All tests run automatically on every push and pull request via the GitHub Actions workflow `[.github/workflows/mirror-gui-tests.yml](.github/workflows/mirror-gui-tests.yml)`. The workflow contains five parallel jobs described below.
 
 ---
 
 ## CI Jobs Overview
 
 
-| Job                      | Runner          | What it does                                                                                           |
-| ------------------------ | --------------- | ------------------------------------------------------------------------------------------------------ |
-| **unit-and-integration** | `ubuntu-latest` | Build, lint, unit tests, integration tests, coverage, audit-catalog tests, catalog metadata validation  |
-| **e2e**                  | `ubuntu-latest` | Playwright end-to-end browser tests against a live dev server                                          |
-| **shellcheck**           | `ubuntu-latest` | Static analysis of all shell scripts                                                                   |
-| **container-image**      | `ubuntu-latest` | Validates the Dockerfile builds successfully with Podman                                               |
+| Job                 | Runner          | What it does                                                                         |
+| ------------------- | --------------- | ------------------------------------------------------------------------------------ |
+| **backend**         | `ubuntu-latest` | `gofmt` check, `go vet`, Go unit and API tests with the race detector and coverage    |
+| **frontend**        | `ubuntu-latest` | Frontend build, ESLint, Vitest script tests                                           |
+| **e2e**             | `ubuntu-latest` | Playwright end-to-end browser tests against the Go server serving the built frontend |
+| **shellcheck**      | `ubuntu-latest` | Static analysis of all shell scripts                                                 |
+| **container-image** | `ubuntu-latest` | Validates the Dockerfile builds successfully with Podman                             |
 
 
 ---
 
-## Job 1: unit-and-integration
+## Job 1: backend
 
-Runs the following steps in order:
+1. **Formatting** (`gofmt -l cmd internal`) -- fails if any Go file is not gofmt-formatted
+2. **Vet** (`go vet ./...`)
+3. **Unit and API tests** (`go test -race -cover ./...`)
+
+### Go tests (`internal/server/`, `internal/catalogmeta/`)
+
+Tests use only the standard library. API tests drive the real `http.Handler` with `net/http/httptest`; each test gets a fresh server with temporary storage and the catalog fixture in `tests/fixtures/catalog-data/`. Tests that run operations or catalog syncs put a fake `oc-mirror` or `oc` script first on `PATH`.
+
+
+| File                                     | Description                                                                                                                                                       |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `internal/server/utils_test.go`          | Version parsing and sorting, catalog name resolution, channel extraction/normalization, path availability, optional oc-mirror flag validation, JSON-to-YAML conversion, catalog sync diff |
+| `internal/server/api_test.go`            | Every REST endpoint: health, catalogs, operators/channels/versions/dependencies, config save/upload/download/delete, mirror folders, pull secret, registry verification (including the token flow against a local TLS registry), system info/status/paths, cache cleanup, operation list/stats/start/stop/delete/logs/details, SSE log streaming, oc-mirror success/failure/stop handling, catalog sync (missing `oc` and a full run with a fake `oc`), SPA serving, CORS |
+| `internal/catalogmeta/catalogmeta_test.go` | FBC metadata generation compared against golden files produced by the former Python implementation (`testdata/`), version ordering, bundle-name versions, `catalog-info.json` / `catalog-index.json` output, `Sync` with a fake `oc` (registry config, retries, partial failure) |
+
+
+---
+
+## Job 2: frontend
 
 1. **Build** (`npm run build`) -- TypeScript compilation and Vite production build
 2. **Lint** (`npm run lint`) -- ESLint on all `src/**/*.{ts,tsx}` files
-3. **Unit and integration tests** (`npm run test`) -- Vitest run across all `tests/unit/` and `tests/integration/` files
-4. **Coverage** (`npm run test:coverage`) -- Same tests with V8 coverage reporting
-5. **Audit-catalog tests** (`npx vitest run tests/scripts/auditFetchCatalogs.test.ts`) -- Tests the audit script logic
-6. **Catalog metadata validation** (`npx vitest run tests/scripts/catalogDataIntegrity.test.ts`) -- Validates all committed catalog data
-
-### Unit Tests (`tests/unit/`)
-
-
-| File                       | Tests | Description                                                                                                     |
-| -------------------------- | ----- | --------------------------------------------------------------------------------------------------------------- |
-| `catalogChannels.test.ts`  | 6     | `getChannelObjectsFromGeneratedOperator` -- handles undefined, empty, string, mixed, and invalid channel inputs |
-| `pathAvailability.test.ts` | 4     | `isPathAvailable` -- writable paths, missing paths under writable parents, read-only ancestors                  |
-| `utils.test.ts`            | 36    | `parseOcMirrorVersion`, `formatDuration`, `formatBytes`, `sanitizeFilename`, and other utility functions        |
-
-
-### Integration Tests (`tests/integration/`)
-
-Server API tests using Supertest against the Express server. Each suite starts a test server instance.
-
-
-| File                          | Tests | Description                                                                                               |
-| ----------------------------- | ----- | --------------------------------------------------------------------------------------------------------- |
-| `health.test.ts`              | 1     | `GET /api/health` -- returns `healthy` status, `mirror-gui` service name, valid ISO timestamp             |
-| `catalogs.test.ts`            | 2     | `GET /api/catalogs` -- prefetched catalogs with operator counts, `digest` / `syncedAt` fields, error path |
-| `channels.test.ts`            | 1     | `GET /api/channels` -- returns OCP channel names (stable-4.16 through stable-4.21)                        |
-| `operators.test.ts`           | 15    | `GET /api/operators` -- operator listing, filtering by catalog/version, search, pagination                |
-| `config.test.ts`              | 12    | Config API -- list, save, upload, delete, validate YAML configurations                                    |
-| `configDownload.test.ts`      | 4     | `GET /api/config/download/:filename` -- invalid extension, traversal-safe basename, 404, successful download |
-| `operations.test.ts`          | 7     | Operations API -- list, recent operations, stats (total/successful/failed/running)                        |
-| `operationsLifecycle.test.ts` | 6     | Operations lifecycle -- start, stop, logs, details, SSE streaming, 404 handling                           |
-| `settings.test.ts`            | 4     | Settings API -- registries list, cache cleanup, `POST /api/registries/verify` validation                   |
-| `system.test.ts`              | 3     | System API -- path availability, system info (oc-mirror version, architecture, disk space), system status |
-| `pullSecret.test.ts`          | 11    | Pull secret API -- status, content, save/validate, delete, system status / hostDataDir                     |
-| `mirrorFolders.test.ts`       | 3     | `GET` / `POST /api/mirror-folders` -- list folders, reject invalid names, create folder                    |
-| `catalogSync.test.ts`         | 3     | Catalog sync -- `GET /api/catalogs/sync/status`, `DELETE /api/catalogs/sync/data`, `POST` when script missing |
-
+3. **Script tests** (`npm run test`) -- Vitest run across `tests/scripts/`
 
 ### Script Tests (`tests/scripts/`)
 
@@ -72,9 +56,9 @@ Server API tests using Supertest against the Express server. Each suite starts a
 
 ---
 
-## Job 2: e2e
+## Job 3: e2e
 
-Runs Playwright browser tests using headless Chromium (port 3001 in CI via dev server, port 3000 locally against a running container).
+Runs Playwright browser tests using headless Chromium (port 3001 in CI against `go run ./cmd/mirror-gui` serving the built `dist/`, port 3000 locally against a running container).
 
 
 | File                         | Tests | Description                                                                                                                    |
@@ -93,7 +77,7 @@ Playwright reports are uploaded as CI artifacts (retained 14 days).
 
 ---
 
-## Job 3: shellcheck
+## Job 4: shellcheck
 
 Runs [ShellCheck](https://www.shellcheck.net/) with `-S error` (error-level severity) on all shell scripts:
 
@@ -106,7 +90,7 @@ Scripts that are not present (e.g., gitignored) are skipped gracefully.
 
 ---
 
-## Job 4: container-image
+## Job 5: container-image
 
 Builds the multi-stage Dockerfile with Podman to verify the container image builds successfully. Does not push to any registry. Has a 45-minute timeout to accommodate the oc-mirror binary download.
 
@@ -119,22 +103,26 @@ podman build -t mirror-gui:ci .
 ## Running Tests Locally
 
 ```bash
-# Unit and integration tests
+# Backend unit and API tests
+go test ./...
+
+# With race detector and coverage
+go test -race -cover ./...
+
+# Single backend test
+go test ./internal/server -run TestOperationLogStream -v
+
+# Script tests (Vitest)
 npm test
 
-# With coverage
-npm run test:coverage
-
-# Single test file
-npx vitest run tests/scripts/catalogDataIntegrity.test.ts
-
-# E2E tests (requires running container on port 3000, or set E2E_PORT=3001 with dev server)
+# E2E tests (requires running container on port 3000)
 npm run test:e2e
 
-# All tests (unit + integration + E2E)
-npm run test:all
+# E2E tests against a local Go server (builds nothing; run `npm run build` first)
+CI=1 npm run test:e2e
 
 # Lint
+gofmt -l cmd internal && go vet ./...
 npm run lint
 
 # Audit-catalog script
@@ -146,12 +134,9 @@ npm run audit:fetch-catalogs
 ## Test Counts Summary
 
 
-| Category         | Files  | Test Cases |
-| ---------------- | ------ | ---------- |
-| Unit             | 3      | 46         |
-| Integration      | 13     | 71         |
-| Scripts          | 3      | 103        |
-| E2E (Playwright) | 8      | 51         |
-| **Total**        | **27** | **271**    |
-
-
+| Category           | Files  | Test Cases |
+| ------------------ | ------ | ---------- |
+| Go (unit + API)    | 3      | 49         |
+| Scripts (Vitest)   | 3      | 10         |
+| E2E (Playwright)   | 11     | 96         |
+| **Total**          | **17** | **155**    |

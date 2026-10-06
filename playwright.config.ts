@@ -30,7 +30,8 @@ export default defineConfig({
   ...(isCI
     ? {
         webServer: {
-          command: 'npx tsx server/index.ts',
+          // Serves the API and the built frontend; run `npm run build` first.
+          command: 'go run ./cmd/mirror-gui',
           url: baseURL,
           reuseExistingServer: false,
           timeout: 120 * 1000,

@@ -73,8 +73,8 @@ test.describe('Operation Lifecycle', () => {
     await expect(statusCell.getByText(/Running|Success|Failed|Stopped/)).toBeVisible({ timeout: 10000 });
 
     // Stop via API so oc-mirror doesn't run indefinitely.
-    // Wrapped in toPass() because tsx watch may briefly restart the server
-    // when operation data files are written to disk.
+    // Wrapped in toPass() to tolerate transient request failures while the
+    // operation record is being written.
     await expect(async () => {
       const opsRes = await request.get('/api/operations');
       const ops = await opsRes.json();

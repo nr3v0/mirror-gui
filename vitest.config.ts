@@ -1,22 +1,10 @@
 import { defineConfig } from 'vitest/config';
-import path from 'path';
 
+// Backend tests are Go tests (`go test ./...`); vitest only covers the Node helper scripts.
 export default defineConfig({
   test: {
     environment: 'node',
-    globalSetup: ['tests/integration/helpers/globalSetup.ts'],
     include: ['tests/**/*.test.ts'],
     exclude: ['tests/e2e/**'],
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json', 'html'],
-      include: ['server/**/*.ts'],
-      exclude: ['server/**/*.test.ts', 'server/**/*.spec.ts', 'server/dist/**'],
-    },
-  },
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './'),
-    },
   },
 });

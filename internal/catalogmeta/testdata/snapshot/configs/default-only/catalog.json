@@ -1,0 +1,3 @@
+{"schema":"olm.package","name":"default-only","defaultChannel":"stable"}
+{"schema":"olm.bundle","package":"default-only","name":"default-only.v0.9.0","properties":[{"type":"olm.package.required","value":{"packageName":"needs-me","versionRange":null}}]}
+{"schema":"olm.bundle","package":"default-only","name":"default-only.v1.0.0","properties":[]}

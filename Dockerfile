@@ -1,10 +1,7 @@
+# Node.js is only used here to build the React frontend; the runtime image has no Node.js or npm.
 FROM registry.access.redhat.com/ubi9/nodejs-22-minimal AS builder
 
 USER root
-
-ARG BUILD_DATE=""
-ARG VCS_REF=""
-ARG VERSION=1.0
 
 WORKDIR /app
 
@@ -35,8 +32,22 @@ RUN mkdir -p /app/catalog-data-minimal && \
     done
 RUN npx vite build
 
-# Fetch oc-mirror only; wget/tar stay in this stage (not copied to production).
-FROM registry.access.redhat.com/ubi9/nodejs-22-minimal AS downloader
+# Build the Go backend as a static binary.
+FROM registry.access.redhat.com/ubi9/go-toolset:1.26 AS gobuilder
+
+USER root
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY cmd ./cmd
+COPY internal ./internal
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/mirror-gui ./cmd/mirror-gui
+
+# Fetch oc-mirror and oc; wget/tar stay in this stage (not copied to production).
+FROM registry.access.redhat.com/ubi9/ubi-minimal AS downloader
 
 USER root
 
@@ -68,32 +79,10 @@ RUN set -eux; \
       rm /tmp/oc-mirror.tar.gz; \
     fi; \
     chmod +x /usr/local/bin/oc-mirror; \
-    which oc-mirror; \
+    command -v oc-mirror; \
     oc-mirror version
 
-FROM registry.access.redhat.com/ubi9/nodejs-22-minimal AS production
-
-USER root
-
-ENV NODE_ENV=production
-
-ARG BUILD_DATE=""
-ARG VCS_REF=""
-ARG VERSION=1.0
-
-COPY --from=downloader /usr/local/bin/oc-mirror /usr/local/bin/oc-mirror
-
-RUN microdnf install -y --nodocs \
-        bash tar gzip wget gpgme \
-        python3 python3-pyyaml jq \
-        util-linux shadow-utils && \
-    microdnf clean all && \
-    # nodejs-22-minimal has no named app user; create UBI convention uid 1001 (default).
-    useradd --uid 1001 --gid 0 --home-dir /app --no-create-home \
-        --shell /sbin/nologin default
-
-# Install oc CLI for runtime catalog sync (oc image extract)
-ARG TARGETARCH
+# oc CLI is used at runtime by the in-app catalog sync (oc image extract / oc image info).
 RUN set -eux; \
     if [ "$TARGETARCH" = "arm64" ]; then \
       OC_FILE="openshift-client-linux-arm64.tar.gz"; \
@@ -112,40 +101,39 @@ RUN set -eux; \
     fi; \
     oc version --client
 
+FROM registry.access.redhat.com/ubi9/ubi-minimal AS production
+
+USER root
+
+ARG BUILD_DATE=""
+ARG VCS_REF=""
+ARG VERSION=1.0
+
+COPY --from=downloader /usr/local/bin/oc-mirror /usr/local/bin/oc-mirror
+COPY --from=downloader /usr/local/bin/oc /usr/local/bin/oc
+
+# gpgme: oc-mirror runtime dependency.
+# util-linux (runuser/su) and shadow-utils (useradd): entrypoint.sh.
+RUN microdnf install -y --nodocs \
+        bash gpgme \
+        util-linux shadow-utils && \
+    microdnf clean all && \
+    # ubi-minimal has no named app user; create UBI convention uid 1001 (default).
+    useradd --uid 1001 --gid 0 --home-dir /app --no-create-home \
+        --shell /sbin/nologin default
+
 RUN set -eux; \
-    which oc-mirror; \
     oc-mirror version; \
-    which node; \
-    node --version; \
-    which npm; \
-    npm --version
+    oc version --client
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm config set fetch-timeout 300000 && \
-    npm config set fetch-retries 5 && \
-    npm config set fetch-retry-mintimeout 20000 && \
-    npm config set fetch-retry-maxtimeout 120000 && \
-    if [ -f package-lock.json ]; then \
-      npm ci --no-fund --no-audit && \
-      npm cache clean --force; \
-    else \
-      npm install --no-fund --no-audit && \
-      npm cache clean --force; \
-    fi
-
+COPY --from=gobuilder /out/mirror-gui ./mirror-gui
 COPY --from=builder /app/dist ./dist
-COPY server ./server
-COPY scripts/catalog_metadata.py ./scripts/catalog_metadata.py
-COPY sync-catalogs.sh ./sync-catalogs.sh
-RUN chmod +x ./sync-catalogs.sh
 
 # Copy only generated catalog metadata required at runtime.
 COPY --from=builder /app/catalog-data-minimal ./catalog-data
 
-
-# UBI Node images use uid 1001 (user "default"), not Debian's "node" user.
 RUN mkdir -p /app/data && chown -R 1001:0 /app
 
 LABEL org.opencontainers.image.created="${BUILD_DATE}" \
@@ -161,4 +149,4 @@ RUN chmod +x /entrypoint.sh
 EXPOSE 3001
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["npx", "tsx", "server/index.ts"]
+CMD ["/app/mirror-gui"]

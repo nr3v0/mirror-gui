@@ -7,7 +7,25 @@ on:
     branches: [main]
 
 jobs:
-  unit-and-integration:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l cmd internal)"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Run unit and API tests
+        run: go test -race -cover ./...
+
+  frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -24,14 +42,8 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Run unit and integration tests
+      - name: Run script tests
         run: npm run test
-
-      - name: Run tests with coverage
-        run: npm run test:coverage
-
-      - name: Run audit-catalog tests
-        run: npx vitest run tests/scripts/auditFetchCatalogs.test.ts
 
 
   e2e:
@@ -43,7 +55,14 @@ jobs:
         with:
           node-version: 22
 
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
       - run: npm ci
+
+      - name: Build frontend
+        run: npm run build
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium

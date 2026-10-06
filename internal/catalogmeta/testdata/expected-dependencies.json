@@ -1,0 +1,18 @@
+{
+  "split-operator": [
+    {
+      "packageName": "dep-from-latest",
+      "versionRange": ">=4.0.0"
+    }
+  ],
+  "standard-operator": [
+    {
+      "packageName": "alpha-dep",
+      "versionRange": null
+    },
+    {
+      "packageName": "zeta-dep",
+      "versionRange": ">=1.0.0 <2.0.0"
+    }
+  ]
+}

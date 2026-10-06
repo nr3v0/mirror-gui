@@ -1,0 +1,14 @@
+- schema: olm.package
+  name: yaml-list
+  defaultChannel: candidate
+- schema: olm.channel
+  package: yaml-list
+  name: candidate
+  entries:
+    - name: yaml-list.v0.0.1
+- schema: olm.bundle
+  package: yaml-list
+  name: yaml-list.v0.0.1
+  properties:
+    - type: olm.package
+      value: {packageName: yaml-list, version: 0.0.1}
