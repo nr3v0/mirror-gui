@@ -10,19 +10,25 @@ COPY public ./public
 COPY src ./src
 RUN VITE_SOURCEMAP=false npx vite build
 
+# The app version, captured here because go-toolset defines its own VERSION
+# environment variable, which would shadow the build argument in that stage.
+FROM registry.access.redhat.com/ubi9/ubi-micro AS version
+ARG VERSION=dev
+RUN echo "$VERSION" > /version
+
 # Backend binary, oc-mirror and built-in catalog data.
 FROM registry.access.redhat.com/ubi9/go-toolset:1.26 AS builder
 USER root
 ARG TARGETARCH
-ARG VERSION=dev
 WORKDIR /src
 
 COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
+COPY --from=version /version /tmp/version
 RUN CGO_ENABLED=0 go build -trimpath \
-        -ldflags="-s -w -X github.com/nr3v0/mirror-gui/internal/server.Version=${VERSION}" \
+        -ldflags="-s -w -X github.com/nr3v0/mirror-gui/internal/server.Version=$(cat /tmp/version)" \
         -o /out/app/mirror-gui ./cmd/mirror-gui && \
     mkdir -p /out/app/data
 
