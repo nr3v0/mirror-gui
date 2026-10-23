@@ -1,6 +1,6 @@
 {
   "name": "mirror-gui",
-  "version": "5.0.0",
+  "version": "5.0.1",
   "description": "Web application for OpenShift Container Platform mirroring operations using oc-mirror v2",
   "license": "Apache-2.0",
   "repository": {
@@ -39,11 +39,11 @@
     "@patternfly/react-icons": "^6",
     "@patternfly/react-table": "^6",
     "@patternfly/react-templates": "^6.4.3",
-    "axios": "^1.18.0",
+    "axios": "^1.20.0",
     "highlight.js": "^11.11.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.30.6",
+    "react-router-dom": "^7.18.4",
     "yaml": "^2.8.4"
   },
   "devDependencies": {

@@ -94,7 +94,7 @@ The Dockerfile uses a multi-stage build:
 |-------|---------|
 | `frontend` | Node.js stage: installs npm dependencies and runs `vite build` (without source maps) |
 | `builder` | `go-toolset` stage: compiles the static Go binary, fetches oc-mirror v2 for the target architecture (AMD64/ARM64) and strips its debug symbols, and collects the built-in catalog metadata |
-| final | `ubi-micro` with CA certificates, the Go binary, oc-mirror, the built frontend, and catalog data — no Node.js, Python, package manager, or `oc` |
+| final | `scratch` (no OS packages or shell): the static Go binary, oc-mirror, the built frontend, catalog data, CA certificates, `/etc/passwd`, and `/tmp`. The builder stage assembles this root filesystem. |
 
 The container starts the Go binary as root; because `MIRROR_GUI_RUN_AS=1001:0` is set, it fixes ownership of the mounted `/app/data` volume and pull secret and then switches to uid 1001 before serving. It exposes port 3001 internally. Both `mirror-gui.sh` (the primary run entrypoint) and `local-build.sh` (build-and-run for development) map it to port 3000 on the host, falling back to the next available port if 3000 is in use.
 

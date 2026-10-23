@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"syscall"
@@ -35,6 +36,20 @@ func runCommand(name string, args ...string) (string, error) {
 	defer cancel()
 	out, err := exec.CommandContext(ctx, name, args...).Output()
 	return string(out), err
+}
+
+// machineArchitecture reports the CPU architecture with the names `uname -m`
+// uses (the container image has no uname binary).
+func machineArchitecture() string {
+	switch runtime.GOARCH {
+	case "amd64":
+		return "x86_64"
+	case "arm64":
+		return "aarch64"
+	case "386":
+		return "i686"
+	}
+	return runtime.GOARCH
 }
 
 func diskSpace(dir string) (available, total uint64, err error) {
@@ -67,10 +82,7 @@ func (s *Server) getSystemInfo() systemInfo {
 	if out, err := runCommand("oc-mirror", "version"); err == nil {
 		version = parseOcMirrorVersion(strings.TrimSpace(out))
 	}
-	arch := "Not available"
-	if out, err := runCommand("uname", "-m"); err == nil {
-		arch = strings.TrimSpace(out)
-	}
+	arch := machineArchitecture()
 	available, total, _ := diskSpace(s.cfg.StorageDir)
 
 	hostDataDir := s.cfg.StorageDir
