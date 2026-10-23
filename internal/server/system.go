@@ -14,7 +14,12 @@ import (
 	"time"
 )
 
+// Version is the application version, set at build time with
+// -ldflags "-X github.com/nr3v0/mirror-gui/internal/server.Version=...".
+var Version = "dev"
+
 type systemInfo struct {
+	AppVersion         string `json:"appVersion"`
 	OcMirrorVersion    string `json:"ocMirrorVersion"`
 	SystemArchitecture string `json:"systemArchitecture"`
 	AvailableDiskSpace uint64 `json:"availableDiskSpace"`
@@ -78,6 +83,7 @@ func (s *Server) getSystemInfo() systemInfo {
 	}
 
 	return systemInfo{
+		AppVersion:         Version,
 		OcMirrorVersion:    version,
 		SystemArchitecture: arch,
 		AvailableDiskSpace: available,

@@ -190,6 +190,7 @@ func (s *Server) routes() http.Handler {
 	handle("GET /api/operations/{id}/logs", s.handleOperationLogs)
 	handle("GET /api/operations/{id}/details", s.handleOperationDetails)
 	handle("GET /api/operations/{id}/logstream", s.handleOperationLogStream)
+	handle("GET /api/operations/{id}/images", s.handleOperationImages)
 
 	handle("POST /api/cache/cleanup", s.handleCacheCleanup)
 	handle("POST /api/catalogs/sync", s.handleCatalogSync)

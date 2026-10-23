@@ -602,6 +602,9 @@ func TestSystemEndpoints(t *testing.T) {
 			t.Errorf("%s = %v", key, info[key])
 		}
 	}
+	if info["appVersion"] != "dev" {
+		t.Errorf("appVersion = %v, want dev for test builds", info["appVersion"])
+	}
 	if hostDir, _ := info["hostDataDir"].(string); hostDir == "" || info["ocMirrorVersion"] == nil || info["systemArchitecture"] == nil {
 		t.Errorf("info = %v", info)
 	}
@@ -871,6 +874,88 @@ func TestOperationStopRunningProcess(t *testing.T) {
 	op := e.waitForStatus(id, "stopped", "failed", "success")
 	if op["status"] != "stopped" {
 		t.Errorf("operation = %v", op)
+	}
+}
+
+func TestImagePreview(t *testing.T) {
+	e := newTestEnv(t)
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	t.Setenv("OC_MIRROR_ARGS_FILE", argsFile)
+	// Like oc-mirror --dry-run: write working-dir/dry-run/mapping.txt under the destination.
+	installFakeOcMirror(t, `printf "%s\n" "$@" > "$OC_MIRROR_ARGS_FILE"
+for last; do :; done
+dir="${last#file://}/working-dir/dry-run"
+mkdir -p "$dir"
+cat > "$dir/mapping.txt" <<'MAP'
+docker://registry.redhat.io/redhat/redhat-operator-index@sha256:aa=docker://127.0.0.1:55000/redhat/redhat-operator-index:v4.20
+docker://registry.redhat.io/lvms4/lvms-rhel9-operator@sha256:bb=docker://127.0.0.1:55000/lvms4/lvms-rhel9-operator:sha256-bb
+docker://registry.redhat.io/lvms4/lvms-operator-bundle@sha256:cc=docker://127.0.0.1:55000/lvms4/lvms-operator-bundle:sha256-cc
+docker://quay.io/prometheus/busybox:latest=docker://127.0.0.1:55000/prometheus/busybox:latest
+docker://quay.io/prometheus/busybox:latest=docker://127.0.0.1:55000/prometheus/busybox:latest
+MAP`)
+
+	id := e.startOperation(map[string]any{"dryRun": true, "mirrorDestinationSubdir": "ignored"})
+	op := e.waitForStatus(id, "success", "failed")
+	if op["status"] != "success" || op["dryRun"] != true || op["imageCount"] != 4.0 ||
+		!strings.HasPrefix(op["name"].(string), "Image Preview ") || op["mirrorDestination"] != nil {
+		t.Fatalf("operation = %v", op)
+	}
+	registries := op["imageRegistries"].([]any)
+	if len(registries) != 3 || registries[1].(map[string]any)["prefix"] != "registry.redhat.io/lvms4" ||
+		registries[1].(map[string]any)["count"] != 2.0 {
+		t.Errorf("imageRegistries = %v", registries)
+	}
+
+	raw, _ := os.ReadFile(argsFile)
+	args := strings.Fields(string(raw))
+	if !slices.Contains(args, "--dry-run") || !slices.Contains(args, "--port") || slices.Contains(args, "55000") {
+		t.Errorf("args = %v", args)
+	}
+	if !strings.HasPrefix(args[len(args)-1], "file://"+filepath.Join(e.cfg.StorageDir, "previews")) {
+		t.Errorf("destination = %q, want a preview workspace", args[len(args)-1])
+	}
+	if _, err := os.Stat(filepath.Join(e.cfg.StorageDir, "previews", id)); !os.IsNotExist(err) {
+		t.Error("preview workspace was not removed")
+	}
+	if _, err := os.Stat(filepath.Join(e.cfg.MirrorBaseDir, "ignored")); !os.IsNotExist(err) {
+		t.Error("a preview must not create a mirror destination folder")
+	}
+
+	res := e.do("GET", "/api/operations/"+id+"/images", nil)
+	e.expectStatus(res, 200)
+	if res.obj()["imageCount"] != 4.0 || len(res.obj()["images"].([]any)) != 4 || len(res.obj()["registries"].([]any)) != 3 {
+		t.Errorf("images = %v", res.obj())
+	}
+	res = e.do("GET", "/api/operations/"+id+"/images?download=prefixes", nil)
+	e.expectStatus(res, 200)
+	if string(res.body) != "quay.io/prometheus\nregistry.redhat.io/lvms4\nregistry.redhat.io/redhat\n" ||
+		!strings.Contains(res.header.Get("Content-Disposition"), "attachment") {
+		t.Errorf("prefixes download = %q %v", res.body, res.header)
+	}
+	res = e.do("GET", "/api/operations/"+id+"/images?download=images", nil)
+	if !strings.Contains(string(res.body), "registry.redhat.io/lvms4/lvms-operator-bundle@sha256:cc") {
+		t.Errorf("images download = %q", res.body)
+	}
+
+	e.expectStatus(e.do("DELETE", "/api/operations/"+id, nil), 200)
+	e.expectStatus(e.do("GET", "/api/operations/"+id+"/images", nil), 404)
+}
+
+func TestImagePreviewWithoutMapping(t *testing.T) {
+	e := newTestEnv(t)
+	installFakeOcMirror(t, `exit 0`)
+	id := e.startOperation(map[string]any{"dryRun": true})
+	op := e.waitForStatus(id, "success", "failed")
+	if op["status"] != "failed" || !strings.Contains(op["errorMessage"].(string), "dry-run image list") {
+		t.Errorf("operation = %v", op)
+	}
+	e.expectStatus(e.do("GET", "/api/operations/"+id+"/images", nil), 404)
+
+	e.expectStatus(e.do("POST", "/api/config/save", map[string]any{"config": validConfigYAML, "name": "run.yaml"}), 200)
+	res := e.do("POST", "/api/operations/start", map[string]any{"configFile": "run.yaml", "dryRun": "yes"})
+	e.expectStatus(res, 400)
+	if !strings.Contains(errorText(res), "dryRun must be a boolean") {
+		t.Errorf("error = %q", errorText(res))
 	}
 }
 

@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import {
   Page,
@@ -61,6 +61,14 @@ const AppLayout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { effectiveTheme } = useTheme();
+  const [appVersion, setAppVersion] = useState('dev');
+
+  useEffect(() => {
+    fetch('/api/system/info')
+      .then(res => (res.ok ? res.json() : null))
+      .then(info => { if (info?.appVersion) setAppVersion(info.appVersion); })
+      .catch(() => { /* keep the default label */ });
+  }, []);
 
   const sidebar = (
     <PageSidebar>
@@ -118,7 +126,7 @@ const AppLayout: React.FC = () => {
                     borderRadius: 'var(--pf-t--global--border--radius--pill)',
                   }}
                 >
-                  v1.0
+                  {appVersion === 'dev' ? 'dev' : `v${appVersion}`}
                 </Label>
               </div>
             </ToolbarItem>

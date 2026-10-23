@@ -276,3 +276,26 @@ func TestComputeCatalogDiff(t *testing.T) {
 		t.Errorf("diff = %+v", d)
 	}
 }
+
+func TestRegistryPrefix(t *testing.T) {
+	cases := map[string]string{
+		"registry.redhat.io/redhat/redhat-operator-index:v4.22":             "registry.redhat.io/redhat",
+		"registry.redhat.io/lvms4/lvms-rhel9-operator@sha256:df0ac01977a14": "registry.redhat.io/lvms4",
+		"quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:abc":         "quay.io/openshift-release-dev",
+		"registry.example.com:5000/team/sub/app:1.0":                        "registry.example.com:5000/team",
+		"registry.example.com/app:1.0":                                      "registry.example.com/app",
+		"localhost/app":                                                     "localhost/app",
+		"busybox:latest":                                                    "docker.io/library",
+		"prom/prometheus:v2":                                                "docker.io/prom",
+		"oci:///tmp/catalog":                                                "oci:///tmp/catalog",
+	}
+	for ref, want := range cases {
+		if got := registryPrefix(ref); got != want {
+			t.Errorf("registryPrefix(%q) = %q, want %q", ref, got, want)
+		}
+	}
+	got := countRegistries([]string{"quay.io/a/x:1", "quay.io/a/y:1", "registry.redhat.io/b/z:1"})
+	if !reflect.DeepEqual(got, []RegistryCount{{"quay.io/a", 2}, {"registry.redhat.io/b", 1}}) {
+		t.Errorf("countRegistries = %v", got)
+	}
+}

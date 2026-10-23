@@ -92,6 +92,7 @@ Get system information including versions, disk space, architecture, and cache d
 **Response:**
 ```json
 {
+  "appVersion": "5.0.0",
   "ocMirrorVersion": "4.21.0",
   "systemArchitecture": "x86_64",
   "availableDiskSpace": 480673603584,
@@ -104,6 +105,7 @@ Get system information including versions, disk space, architecture, and cache d
 ```
 
 **Response Fields:**
+- `appVersion`: The mirror-gui version the server was built with (`dev` for local builds)
 - `hostDataDir`: The host-side data directory path
 - `cacheDir`: The cache directory inside the container
 - `hostCacheDir`: The cache directory mapped to the host path
@@ -614,6 +616,7 @@ Start a new mirror operation.
   - If not provided or empty, defaults to `default`
   - Must be alphanumeric with dashes and underscores only (no slashes or special characters)
   - Examples: `default`, `odf`, `production`, `test-123`
+- `dryRun` (boolean, optional): Run an **image preview** instead of a mirror. oc-mirror runs with `--dry-run` against a temporary workspace (on its own local-registry port, so it can run alongside a mirror operation) and nothing is mirrored; `mirrorDestinationSubdir` is ignored. The operation is named `Image Preview <id>` and has `"dryRun": true`. When it succeeds the record also contains `imageCount` and `imageRegistries` (see `GET /api/operations/:id/images`).
 
 **Response:**
 ```json
@@ -708,6 +711,29 @@ Get real-time operation log stream (Server-Sent Events).
 **Response:** Server-Sent Events stream
 
 **Note:** Logs are persisted to `data/logs/` directory and survive container restarts.
+
+#### GET /api/operations/:id/images
+Image sources found by a successful image preview (`dryRun: true`). Each image is reduced to its registry host and first path segment, e.g. `registry.redhat.io/redhat/redhat-operator-index:v4.22` → `registry.redhat.io/redhat`.
+
+**Query Parameters:**
+- `download` (optional): `prefixes` returns the registry list, `images` the full de-duplicated source image list, as a plain-text attachment (one per line).
+
+**Response:**
+```json
+{
+  "operationId": "6fed756d-2d04-4f7d-98ce-c34f5f053b04",
+  "imageCount": 6,
+  "registries": [
+    { "prefix": "quay.io/prometheus", "count": 1 },
+    { "prefix": "registry.redhat.io/lvms4", "count": 3 },
+    { "prefix": "registry.redhat.io/redhat", "count": 1 },
+    { "prefix": "registry.redhat.io/ubi9", "count": 1 }
+  ],
+  "images": ["quay.io/prometheus/busybox:latest", "registry.redhat.io/lvms4/lvms-operator-bundle@sha256:..."]
+}
+```
+
+Returns 404 when the operation has no image list (not a preview, not finished, or failed).
 
 #### POST /api/operations/:id/stop
 Stop a running operation.

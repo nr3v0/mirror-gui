@@ -325,69 +325,49 @@ func (s *Server) handleOperationStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subdir := "default"
-	if raw, _ := body["mirrorDestinationSubdir"].(string); strings.TrimSpace(raw) != "" {
-		input := strings.TrimSpace(raw)
-		if hasPathChars(input) {
-			writeJSON(w, http.StatusBadRequest, jsonObject{
-				"error":    "Subdirectory name cannot contain path separators or traversal characters",
-				"provided": input,
-				"help":     `Use a simple name like "odf" or "production" (no slashes or special characters)`,
-			})
+	dryRun := false
+	if v := body["dryRun"]; v != nil {
+		b, isBool := v.(bool)
+		if !isBool {
+			writeJSON(w, http.StatusBadRequest, errorBody("dryRun must be a boolean"))
 			return
 		}
-		if !simpleNameRe.MatchString(input) {
-			writeJSON(w, http.StatusBadRequest, jsonObject{
-				"error":    "Subdirectory name contains invalid characters",
-				"provided": input,
-				"help":     "Use only letters, numbers, dashes (-), and underscores (_)",
-			})
-			return
-		}
-		subdir = input
-	}
-
-	base := s.cfg.MirrorBaseDir
-	if err := os.MkdirAll(base, 0o777); err != nil {
-		writeJSON(w, http.StatusInternalServerError, jsonObject{
-			"error": "Cannot access base mirror directory", "path": base, "details": err.Error(), "code": errnoCode(err),
-		})
-		return
-	}
-	if err := checkWritable(base); err != nil {
-		writeJSON(w, http.StatusInternalServerError, jsonObject{
-			"error": "Base mirror directory is not writable", "path": base, "details": err.Error(), "code": errnoCode(err),
-		})
-		return
-	}
-
-	mirrorPath := filepath.Join(base, subdir)
-	if err := os.MkdirAll(mirrorPath, 0o775); err != nil {
-		writeJSON(w, http.StatusInternalServerError, jsonObject{
-			"error": "Cannot create or access mirror destination directory", "path": mirrorPath,
-			"subdirectory": subdir, "details": err.Error(), "code": errnoCode(err),
-		})
-		return
-	}
-	if err := checkWritable(mirrorPath); err != nil {
-		writeJSON(w, http.StatusInternalServerError, jsonObject{
-			"error": "Mirror destination directory exists but is not writable", "path": mirrorPath,
-			"subdirectory": subdir, "details": err.Error(), "code": errnoCode(err),
-			"help": "The directory exists but the container cannot write to it. Check permissions on the host.",
-		})
-		return
+		dryRun = b
 	}
 
 	id := newUUID()
+	var mirrorPath string
+	var previewPort int
+	if dryRun {
+		// A free port keeps the preview's local registry from clashing with a
+		// running mirror operation, which uses oc-mirror's default port 55000.
+		if previewPort, err = freePort(); err != nil {
+			writeJSON(w, http.StatusInternalServerError, jsonObject{"error": "Cannot allocate a port for the preview", "details": err.Error()})
+			return
+		}
+		mirrorPath = s.previewWorkspace(id)
+		if err := os.MkdirAll(mirrorPath, 0o755); err != nil {
+			writeJSON(w, http.StatusInternalServerError, jsonObject{"error": "Cannot create preview workspace", "details": err.Error()})
+			return
+		}
+	} else if mirrorPath, ok = s.prepareMirrorDestination(w, body); !ok {
+		return
+	}
+
 	startedAt := time.Now()
 	op := operation{
-		"id":                id,
-		"name":              "Mirror Operation " + id[:8],
-		"configFile":        configFile,
-		"mirrorDestination": mirrorPath,
-		"status":            "running",
-		"startedAt":         isoTime(startedAt),
-		"logs":              []string{},
+		"id":         id,
+		"name":       "Mirror Operation " + id[:8],
+		"configFile": configFile,
+		"status":     "running",
+		"startedAt":  isoTime(startedAt),
+		"logs":       []string{},
+	}
+	if dryRun {
+		op["name"] = "Image Preview " + id[:8]
+		op["dryRun"] = true
+	} else {
+		op["mirrorDestination"] = mirrorPath
 	}
 	if err := atomicWriteJSON(s.operationPath(id), op); err != nil {
 		log.Printf("Error saving operation %s: %v", id, err)
@@ -413,6 +393,9 @@ func (s *Server) handleOperationStart(w http.ResponseWriter, r *http.Request) {
 		"--cache-dir", s.cfg.CacheDir,
 		"--authfile", s.cfg.AuthfilePath,
 	}, additionalArgs...)
+	if dryRun {
+		args = append(args, "--dry-run", "--port", strconv.Itoa(previewPort))
+	}
 	args = append(args, mirrorURL)
 
 	cmd := exec.Command("oc-mirror", args...)
@@ -433,6 +416,9 @@ func (s *Server) handleOperationStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := cmd.Start(); err != nil {
+		if dryRun {
+			os.RemoveAll(mirrorPath)
+		}
 		finish(operation{"status": "failed", "errorMessage": err.Error(), "logs": []string{err.Error()}})
 		writeJSON(w, http.StatusOK, jsonObject{"message": "Operation started successfully", "operationId": id})
 		return
@@ -464,10 +450,82 @@ func (s *Server) handleOperationStart(w http.ResponseWriter, r *http.Request) {
 			status = "failed"
 			errorMessage = extractErrorMessage(logs, exitCode)
 		}
-		finish(operation{"status": status, "errorMessage": errorMessage, "logs": strings.Split(logs, "\n")})
+		updates := operation{"status": status, "errorMessage": errorMessage, "logs": strings.Split(logs, "\n")}
+		if dryRun {
+			if status == "success" {
+				if preview, msg := s.finishPreview(id); msg != "" {
+					updates["status"], updates["errorMessage"] = "failed", msg
+				} else {
+					for k, v := range preview {
+						updates[k] = v
+					}
+				}
+			}
+			os.RemoveAll(s.previewWorkspace(id))
+		}
+		finish(updates)
 	}()
 
 	writeJSON(w, http.StatusOK, jsonObject{"message": "Operation started successfully", "operationId": id})
+}
+
+// prepareMirrorDestination validates mirrorDestinationSubdir and makes sure the
+// mirror directory exists and is writable. On failure it writes the error response.
+func (s *Server) prepareMirrorDestination(w http.ResponseWriter, body jsonObject) (string, bool) {
+	subdir := "default"
+	if raw, _ := body["mirrorDestinationSubdir"].(string); strings.TrimSpace(raw) != "" {
+		input := strings.TrimSpace(raw)
+		if hasPathChars(input) {
+			writeJSON(w, http.StatusBadRequest, jsonObject{
+				"error":    "Subdirectory name cannot contain path separators or traversal characters",
+				"provided": input,
+				"help":     `Use a simple name like "odf" or "production" (no slashes or special characters)`,
+			})
+			return "", false
+		}
+		if !simpleNameRe.MatchString(input) {
+			writeJSON(w, http.StatusBadRequest, jsonObject{
+				"error":    "Subdirectory name contains invalid characters",
+				"provided": input,
+				"help":     "Use only letters, numbers, dashes (-), and underscores (_)",
+			})
+			return "", false
+		}
+		subdir = input
+	}
+
+	base := s.cfg.MirrorBaseDir
+	if err := os.MkdirAll(base, 0o777); err != nil {
+		writeJSON(w, http.StatusInternalServerError, jsonObject{
+			"error": "Cannot access base mirror directory", "path": base, "details": err.Error(), "code": errnoCode(err),
+		})
+		return "", false
+	}
+	if err := checkWritable(base); err != nil {
+		writeJSON(w, http.StatusInternalServerError, jsonObject{
+			"error": "Base mirror directory is not writable", "path": base, "details": err.Error(), "code": errnoCode(err),
+		})
+		return "", false
+	}
+
+	mirrorPath := filepath.Join(base, subdir)
+	if err := os.MkdirAll(mirrorPath, 0o775); err != nil {
+		writeJSON(w, http.StatusInternalServerError, jsonObject{
+			"error": "Cannot create or access mirror destination directory", "path": mirrorPath,
+			"subdirectory": subdir, "details": err.Error(), "code": errnoCode(err),
+		})
+		return "", false
+	}
+	if err := checkWritable(mirrorPath); err != nil {
+		writeJSON(w, http.StatusInternalServerError, jsonObject{
+			"error": "Mirror destination directory exists but is not writable", "path": mirrorPath,
+			"subdirectory": subdir, "details": err.Error(), "code": errnoCode(err),
+			"help": "The directory exists but the container cannot write to it. Check permissions on the host.",
+		})
+		return "", false
+	}
+
+	return mirrorPath, true
 }
 
 // stopGracePeriod is how long a stopped oc-mirror gets to exit after SIGTERM before SIGKILL.
@@ -516,6 +574,7 @@ func (s *Server) handleOperationDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = os.Remove(s.operationPath(id))
+	_ = os.Remove(s.previewImagesPath(id))
 	writeJSON(w, http.StatusOK, jsonObject{"message": "Operation deleted successfully"})
 }
 

@@ -14,13 +14,16 @@ RUN VITE_SOURCEMAP=false npx vite build
 FROM registry.access.redhat.com/ubi9/go-toolset:1.26 AS builder
 USER root
 ARG TARGETARCH
+ARG VERSION=dev
 WORKDIR /src
 
 COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/app/mirror-gui ./cmd/mirror-gui && \
+RUN CGO_ENABLED=0 go build -trimpath \
+        -ldflags="-s -w -X github.com/nr3v0/mirror-gui/internal/server.Version=${VERSION}" \
+        -o /out/app/mirror-gui ./cmd/mirror-gui && \
     mkdir -p /out/app/data
 
 # oc-mirror is prefetched by Konflux (cachi2) or downloaded; its debug symbols are stripped.
@@ -57,7 +60,7 @@ FROM registry.access.redhat.com/ubi9/ubi-micro
 
 ARG BUILD_DATE=""
 ARG VCS_REF=""
-ARG VERSION=1.0
+ARG VERSION=dev
 
 COPY --from=builder /etc/pki/ca-trust/extracted /etc/pki/ca-trust/extracted
 COPY --from=builder /etc/pki/tls/certs /etc/pki/tls/certs

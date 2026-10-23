@@ -52,6 +52,8 @@ import {
   TrashIcon,
   ListIcon,
   CopyIcon,
+  DownloadIcon,
+  EyeIcon,
   InfoCircleIcon,
   OutlinedClockIcon,
   EllipsisVIcon,
@@ -80,6 +82,18 @@ interface Operation {
   duration?: number;
   mirrorDestination?: string;
   errorMessage?: string;
+  dryRun?: boolean;
+  imageCount?: number;
+}
+
+interface RegistryCount {
+  prefix: string;
+  count: number;
+}
+
+interface ImagePreview {
+  imageCount: number;
+  registries: RegistryCount[];
 }
 
 interface OptionalFlags {
@@ -332,6 +346,9 @@ const MirrorOperations: React.FC = () => {
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [advancedOptionsExpanded, setAdvancedOptionsExpanded] = useState(false);
   const [optionalFlags, setOptionalFlags] = useState<OptionalFlags>(DEFAULT_OPTIONAL_FLAGS);
+  const [previewOperation, setPreviewOperation] = useState<Operation | null>(null);
+  const [previewData, setPreviewData] = useState<ImagePreview | null>(null);
+  const [previewError, setPreviewError] = useState('');
 
   const operationsRef = useRef<Operation[]>([]);
   const notifiedOperationsRef = useRef(new Set<string>());
@@ -357,6 +374,17 @@ const MirrorOperations: React.FC = () => {
     }
   }, []);
 
+  const openImagePreview = useCallback((op: Operation) => {
+    setPreviewOperation(op);
+    setPreviewData(null);
+    setPreviewError('');
+    axios.get<ImagePreview>(`/api/operations/${op.id}/images`)
+      .then(res => setPreviewData(res.data))
+      .catch((error: { response?: { data?: { error?: string } }; message?: string }) => {
+        setPreviewError(error.response?.data?.error || error.message || 'Failed to load image sources');
+      });
+  }, []);
+
   const handleOperationCompleted = useCallback((op: Operation) => {
     if (!op?.id) return;
 
@@ -368,15 +396,19 @@ const MirrorOperations: React.FC = () => {
     if (!notifiedOperationsRef.current.has(op.id)) {
       notifiedOperationsRef.current.add(op.id);
 
+      const kind = op.dryRun ? 'Image Preview' : 'Mirror Operation';
       if (op.status === 'success') {
-        addSuccessAlert('Mirror Operation Completed!');
+        addSuccessAlert(`${kind} Completed!`);
+        if (op.dryRun) {
+          openImagePreview(op);
+        }
       } else if (op.status === 'failed') {
-        addDangerAlert('Mirror Operation Failed');
+        addDangerAlert(`${kind} Failed`);
       } else if (op.status === 'stopped') {
-        addWarningAlert('Mirror Operation Stopped');
+        addWarningAlert(`${kind} Stopped`);
       }
     }
-  }, [addSuccessAlert, addDangerAlert, addWarningAlert, fetchLogs]);
+  }, [addSuccessAlert, addDangerAlert, addWarningAlert, fetchLogs, openImagePreview]);
 
   const startLogStream = useCallback((operationId: string) => {
     if (logStream) {
@@ -545,7 +577,7 @@ const MirrorOperations: React.FC = () => {
     return Math.floor((now - new Date(startedAt).getTime()) / 1000);
   };
 
-  const startOperation = async () => {
+  const startOperation = async (dryRun = false) => {
     if (!selectedConfig) {
       addDangerAlert('Please select an ImageSetConfiguration file');
       return;
@@ -567,13 +599,15 @@ const MirrorOperations: React.FC = () => {
       setLoading(true);
       const response = await axios.post('/api/operations/start', {
         configFile: selectedConfig,
-        mirrorDestinationSubdir: mirrorDestinationSubdir.trim() || undefined,
+        ...(dryRun
+          ? { dryRun: true }
+          : { mirrorDestinationSubdir: mirrorDestinationSubdir.trim() || undefined }),
         ...(Object.keys(optionalFlagsPayload).length > 0
           ? { optionalFlags: optionalFlagsPayload }
           : {}),
       });
 
-      addSuccessAlert('Operation started successfully!');
+      addSuccessAlert(dryRun ? 'Image preview started' : 'Operation started successfully!');
       setShowLogs(true);
       fetchOperations();
       void fetchFolders();
@@ -706,24 +740,25 @@ const MirrorOperations: React.FC = () => {
     return mirrorDestination;
   };
 
-  const copyMirrorPath = async (mirrorDestination: string) => {
-    const fullPath = getMirrorFullPath(mirrorDestination);
+  const copyMirrorPath = (mirrorDestination: string) =>
+    copyToClipboard(getMirrorFullPath(mirrorDestination), 'Full path copied to clipboard!', 'Failed to copy path');
 
+  const copyToClipboard = async (text: string, successMessage: string, failureMessage: string) => {
     try {
-      await navigator.clipboard.writeText(fullPath);
-      addSuccessAlert('Full path copied to clipboard!');
+      await navigator.clipboard.writeText(text);
+      addSuccessAlert(successMessage);
     } catch {
       const textArea = document.createElement('textarea');
-      textArea.value = fullPath;
+      textArea.value = text;
       textArea.style.position = 'fixed';
       textArea.style.opacity = '0';
       document.body.appendChild(textArea);
       textArea.select();
       try {
         document.execCommand('copy');
-        addSuccessAlert('Full path copied to clipboard!');
+        addSuccessAlert(successMessage);
       } catch {
-        addDangerAlert('Failed to copy path');
+        addDangerAlert(failureMessage);
       }
       document.body.removeChild(textArea);
     }
@@ -978,11 +1013,23 @@ const MirrorOperations: React.FC = () => {
               <Button
                 variant="primary"
                 icon={loading ? <Spinner size="md" /> : <PlayIcon />}
-                onClick={startOperation}
+                onClick={() => void startOperation()}
                 isDisabled={!selectedConfig || loading}
               >
                 Start Operation
               </Button>
+            </FlexItem>
+            <FlexItem>
+              <Tooltip content="Run oc-mirror in dry-run mode to list the registries this configuration pulls from, without mirroring anything.">
+                <Button
+                  variant="secondary"
+                  icon={<EyeIcon />}
+                  onClick={() => void startOperation(true)}
+                  isDisabled={!selectedConfig || loading}
+                >
+                  Preview Images
+                </Button>
+              </Tooltip>
             </FlexItem>
           </Flex>
 
@@ -1351,6 +1398,9 @@ const MirrorOperations: React.FC = () => {
                     />
                     <Td dataLabel="Operation">
                       {op.name}
+                      {op.dryRun && (
+                        <Label color="blue" isCompact className="pf-v6-u-ml-sm">Preview</Label>
+                      )}
                     </Td>
                     <Td dataLabel="Config">
                       <Button
@@ -1406,6 +1456,18 @@ const MirrorOperations: React.FC = () => {
                           >
                             View Logs
                           </DropdownItem>
+                          {op.status === 'success' && op.dryRun && (
+                            <DropdownItem
+                              key={`${op.id}-images`}
+                              icon={<EyeIcon />}
+                              onClick={() => {
+                                setKebabOpen((prev) => ({ ...prev, [op.id]: false }));
+                                openImagePreview(op);
+                              }}
+                            >
+                              View Image Sources
+                            </DropdownItem>
+                          )}
                           {op.status === 'success' && op.mirrorDestination && (
                             <DropdownItem
                               key={`${op.id}-copy-location`}
@@ -1557,6 +1619,72 @@ const MirrorOperations: React.FC = () => {
           </Button>
           <Button variant="link" onClick={() => setBulkDeleteTarget(null)}>
             Cancel
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      <Modal
+        variant={ModalVariant.medium}
+        isOpen={previewOperation !== null}
+        onClose={() => setPreviewOperation(null)}
+        aria-label="Image sources"
+      >
+        <ModalHeader
+          title="Image Sources"
+          description={previewOperation ? `Registries that ${previewOperation.configFile} pulls images from (registry host and first path segment).` : undefined}
+        />
+        <ModalBody>
+          {previewError && <Alert variant="danger" isInline title={previewError} />}
+          {!previewError && !previewData && <Spinner size="lg" aria-label="Loading image sources" />}
+          {previewData && (
+            <>
+              <p className="pf-v6-u-mb-md">
+                <strong>{previewData.imageCount}</strong> image{previewData.imageCount !== 1 ? 's' : ''} from{' '}
+                <strong>{previewData.registries.length}</strong> registr{previewData.registries.length !== 1 ? 'ies' : 'y'}
+              </p>
+              <Table aria-label="Image sources" variant="compact">
+                <Thead>
+                  <Tr>
+                    <Th>Registry</Th>
+                    <Th modifier="fitContent">Images</Th>
+                  </Tr>
+                </Thead>
+                <Tbody>
+                  {previewData.registries.map(r => (
+                    <Tr key={r.prefix}>
+                      <Td dataLabel="Registry"><code>{r.prefix}</code></Td>
+                      <Td dataLabel="Images">{r.count}</Td>
+                    </Tr>
+                  ))}
+                </Tbody>
+              </Table>
+            </>
+          )}
+        </ModalBody>
+        <ModalFooter>
+          <Button
+            variant="primary"
+            icon={<CopyIcon />}
+            isDisabled={!previewData}
+            onClick={() => previewData && void copyToClipboard(
+              previewData.registries.map(r => r.prefix).join('\n'),
+              'Registry list copied to clipboard!',
+              'Failed to copy registry list',
+            )}
+          >
+            Copy Registries
+          </Button>
+          <Button
+            variant="secondary"
+            icon={<DownloadIcon />}
+            isDisabled={!previewData}
+            component="a"
+            href={previewOperation ? `/api/operations/${previewOperation.id}/images?download=images` : undefined}
+          >
+            Download Full Image List
+          </Button>
+          <Button variant="link" onClick={() => setPreviewOperation(null)}>
+            Close
           </Button>
         </ModalFooter>
       </Modal>

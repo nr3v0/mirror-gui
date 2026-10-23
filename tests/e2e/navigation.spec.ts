@@ -42,9 +42,11 @@ test.describe('Navigation', () => {
     await expect(page.getByText('Image Mirroring for Disconnected Clusters')).toBeVisible();
   });
 
-  test('masthead shows current app version badge', async ({ page }) => {
+  test('masthead shows current app version badge', async ({ page, request }) => {
+    const info = await (await request.get('/api/system/info')).json();
+    const label = info.appVersion === 'dev' ? 'dev' : `v${info.appVersion}`;
     await page.goto('/');
-    await expect(page.getByText('v1.0')).toBeVisible();
+    await expect(page.getByText(label, { exact: true })).toBeVisible();
   });
 
   test('Red Hat logo is visible', async ({ page }) => {
