@@ -37,6 +37,13 @@ type Config struct {
 	BuiltinCatalogDir  string
 	DistDir            string
 	HostDataDir        string
+	// OcMirrorPath is the oc-mirror executable (looked up on PATH when it has no slash).
+	OcMirrorPath string
+	// OcMirrorSource describes where that binary came from, e.g. "source" or "redhat".
+	OcMirrorSource string
+	// CatalogVersions are the OpenShift releases the catalog sync fetches
+	// (CATALOG_OCP_VERSIONS); empty means catalogmeta.DefaultOCPVersions.
+	CatalogVersions []string
 }
 
 func envOr(key, fallback string) string {
@@ -79,6 +86,8 @@ func ConfigFromEnv() Config {
 		BuiltinCatalogDir:  filepath.Join(appRoot, "catalog-data"),
 		DistDir:            filepath.Join(appRoot, "dist"),
 		HostDataDir:        os.Getenv("HOST_DATA_DIR"),
+		OcMirrorPath:       "oc-mirror",
+		OcMirrorSource:     os.Getenv("OC_MIRROR_BUILT_FROM"),
 	}
 }
 
@@ -134,6 +143,9 @@ func New(cfg Config) *Server {
 		syncVersions:     catalogmeta.DefaultOCPVersions,
 		syncCatalogTypes: catalogmeta.DefaultCatalogTypes,
 		syncRetryDelay:   2 * time.Second,
+	}
+	if len(cfg.CatalogVersions) > 0 {
+		s.syncVersions = cfg.CatalogVersions
 	}
 	s.syncState = s.newCatalogSyncState()
 	s.ensureDirectories()

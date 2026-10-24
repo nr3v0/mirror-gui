@@ -260,3 +260,18 @@ func TestAuthFileKeychain(t *testing.T) {
 		}
 	}
 }
+
+func TestParseOCPVersions(t *testing.T) {
+	got, err := ParseOCPVersions(" 4.21, v4.22\t4.23 5.0,5.1 ")
+	if err != nil || !reflect.DeepEqual(got, []string{"4.21", "4.22", "4.23", "5.0", "5.1"}) {
+		t.Errorf("ParseOCPVersions = %v, %v", got, err)
+	}
+	if got, err := ParseOCPVersions(""); err != nil || got != nil {
+		t.Errorf("empty list = %v, %v", got, err)
+	}
+	for _, bad := range []string{"4", "4.2x", "latest", "4.21.1"} {
+		if _, err := ParseOCPVersions(bad); err == nil {
+			t.Errorf("expected error for %q", bad)
+		}
+	}
+}

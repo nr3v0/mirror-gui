@@ -87,8 +87,9 @@ test.describe('Full Mirroring Workflow', () => {
     await expect(page.getByRole('heading', { name: 'Platform Channels' })).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole('button', { name: 'Add platform channel' }).click();
-    await page.getByRole('button', { name: /^stable-/ }).click();
-    await page.getByRole('option', { name: 'stable-4.21' }).click();
+    await page.getByPlaceholder('Release, e.g. 4.22').fill('4.21');
+    await page.getByRole('option', { name: '4.21', exact: true }).click();
+    await expect(page.getByText('Channel: stable-4.21')).toBeVisible();
 
     await page.getByRole('tab', { name: /Operators/ }).click();
     await page.getByRole('button', { name: 'Add operator catalog' }).click();
@@ -105,7 +106,7 @@ test.describe('Full Mirroring Workflow', () => {
 
     // Verify state persists across tab switches
     await page.getByRole('tab', { name: /Platform Channels/ }).click();
-    await expect(page.getByRole('button', { name: 'stable-4.21' })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('Channel: stable-4.21')).toBeVisible({ timeout: 5_000 });
     await page.getByRole('tab', { name: /Operators/ }).click();
     await expect(page.getByText('Default Channel')).toBeVisible({ timeout: 5_000 });
 

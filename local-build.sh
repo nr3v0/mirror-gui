@@ -10,8 +10,10 @@ set -e
 # - BUILD_NO_CACHE=true -> pass --no-cache to podman build
 # - IMAGE_VERSION=1.0   -> set OCI image version label during build
 # - BUILD_VERSION=1.0   -> compatibility alias for IMAGE_VERSION
+# - OC_MIRROR_FROM=source|redhat -> build oc-mirror from source (default) or use Red Hat's binary
 BUILD_NO_CACHE="${BUILD_NO_CACHE:-false}"
 IMAGE_VERSION="${IMAGE_VERSION:-${BUILD_VERSION:-}}"
+OC_MIRROR_FROM="${OC_MIRROR_FROM:-source}"
 
 # Image name (use localhost/ prefix to prevent Podman from searching registries)
 IMAGE_NAME="localhost/mirror-gui"
@@ -218,6 +220,9 @@ build_image() {
         build_cmd+=(--build-arg "VERSION=${IMAGE_VERSION}")
     fi
 
+    print_status "oc-mirror: ${OC_MIRROR_FROM} (use --oc-mirror source|redhat to change)"
+    build_cmd+=(--build-arg "OC_MIRROR_FROM=${OC_MIRROR_FROM}")
+
     build_cmd+=(-t "$IMAGE_NAME" .)
 
     if "${build_cmd[@]}"; then
@@ -417,11 +422,14 @@ show_help() {
     echo "  --status            Show container status"
     echo "  --no-cache          Rebuild the container image without using cache"
     echo "  --version VERSION   Set OCI image version label during build"
+    echo "  --oc-mirror SOURCE  Where oc-mirror comes from: 'source' (default, compiled with"
+    echo "                      current Go and patched modules) or 'redhat' (Red Hat's binary)"
     echo ""
     echo "Environment Variables:"
     echo "  BUILD_NO_CACHE=true        Disable build cache when building the container image"
     echo "  IMAGE_VERSION=1.0          Set OCI image version label during build"
     echo "  BUILD_VERSION=1.0          Compatibility alias for IMAGE_VERSION"
+    echo "  OC_MIRROR_FROM=source      Same as --oc-mirror (source or redhat)"
     echo "  WEB_PORT=$DEFAULT_WEB_PORT            Override the host port used for the web UI"
     echo "  CACHE_DIR                  Override the oc-mirror cache directory (absolute host path, e.g. /tmp/cache)"
     echo ""
@@ -430,6 +438,7 @@ show_help() {
     echo "  $0 --build"
     echo "  $0 --build --version 1.0"
     echo "  $0 --build --no-cache"
+    echo "  $0 --build --oc-mirror redhat"
     echo "  WEB_PORT=3002 $0 --run"
     echo ""
     echo "Container Engine Support:"
@@ -514,6 +523,15 @@ parse_arguments() {
                     exit 1
                 fi
                 IMAGE_VERSION="$2"
+                shift 2
+                ;;
+            --oc-mirror)
+                if [ $# -lt 2 ] || { [ "$2" != "source" ] && [ "$2" != "redhat" ]; }; then
+                    print_error "--oc-mirror requires 'source' or 'redhat'"
+                    echo "Use --help for usage information"
+                    exit 1
+                fi
+                OC_MIRROR_FROM="$2"
                 shift 2
                 ;;
             *)

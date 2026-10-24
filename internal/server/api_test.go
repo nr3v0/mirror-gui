@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -132,10 +133,37 @@ func TestChannelsEndpoint(t *testing.T) {
 	e := newTestEnv(t)
 	res := e.do("GET", "/api/channels", nil)
 	e.expectStatus(res, 200)
-	for _, ch := range []string{"stable-4.16", "stable-4.17", "stable-4.18", "stable-4.19", "stable-4.20", "stable-4.21"} {
+	for _, ch := range []string{"stable-4.16", "stable-4.21", "fast-4.22", "candidate-4.17", "eus-4.16", "eus-4.22"} {
 		if !containsAny(res.arr(), ch) {
-			t.Errorf("missing %s", ch)
+			t.Errorf("missing %s in %v", ch, res.arr())
 		}
+	}
+	for _, ch := range []string{"eus-4.17", "eus-4.21"} {
+		if containsAny(res.arr(), ch) {
+			t.Errorf("%s is not a published channel", ch)
+		}
+	}
+}
+
+func TestCatalogVersionsFromConfig(t *testing.T) {
+	e := newTestEnv(t)
+	cfg := e.cfg
+	cfg.CatalogVersions = []string{"4.22", "4.23", "5.0"}
+	srv := New(cfg)
+	if !reflect.DeepEqual(srv.syncVersions, []string{"4.22", "4.23", "5.0"}) {
+		t.Errorf("syncVersions = %v", srv.syncVersions)
+	}
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/api/catalogs/sync/status", nil))
+	var status map[string]any
+	json.Unmarshal(rec.Body.Bytes(), &status)
+	if status["totalCount"] != 9.0 {
+		t.Errorf("totalCount = %v, want 3 releases x 3 catalog types", status["totalCount"])
+	}
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/api/channels", nil))
+	if !strings.Contains(rec.Body.String(), "candidate-5.0") || !strings.Contains(rec.Body.String(), "stable-4.23") {
+		t.Errorf("channels = %s", rec.Body.String())
 	}
 }
 
@@ -851,6 +879,25 @@ func TestOperationRunSuccessPassesFlags(t *testing.T) {
 	logFile, _ := os.ReadFile(filepath.Join(e.cfg.LogsDir, id+".log"))
 	if !strings.Contains(string(logFile), "images to copy 2") {
 		t.Errorf("log file = %q", logFile)
+	}
+}
+
+func TestOperationUsesConfiguredOcMirrorPath(t *testing.T) {
+	e := newTestEnv(t)
+	installFakeOcMirror(t, `echo "from PATH"; exit 1`)
+	custom := filepath.Join(t.TempDir(), "oc-mirror-redhat")
+	if err := os.WriteFile(custom, []byte("#!/bin/sh\necho 'GitVersion:\"9.9.9\"'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e.srv.cfg.OcMirrorPath, e.srv.cfg.OcMirrorSource = custom, "redhat-runtime"
+
+	id := e.startOperation(map[string]any{})
+	if op := e.waitForStatus(id, "success", "failed"); op["status"] != "success" {
+		t.Errorf("operation = %v (ran the oc-mirror on PATH?)", op)
+	}
+	info := e.do("GET", "/api/system/info", nil).obj()
+	if info["ocMirrorVersion"] != "9.9.9" || info["ocMirrorSource"] != "redhat-runtime" {
+		t.Errorf("info = %v", info)
 	}
 }
 

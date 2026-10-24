@@ -15,12 +15,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/nr3v0/mirror-gui/internal/catalogmeta"
+	"github.com/nr3v0/mirror-gui/internal/ocmirrorbin"
 	"github.com/nr3v0/mirror-gui/internal/server"
 )
 
@@ -60,13 +62,56 @@ func main() {
 
 func serve() error {
 	cfg := server.ConfigFromEnv()
+	versions, err := catalogmeta.ParseOCPVersions(os.Getenv("CATALOG_OCP_VERSIONS"))
+	if err != nil {
+		return fmt.Errorf("CATALOG_OCP_VERSIONS: %w", err)
+	}
+	cfg.CatalogVersions = versions
 	if err := dropPrivileges(cfg); err != nil {
 		return err
 	}
+	useRedHatOcMirror(&cfg)
 	srv := server.New(cfg)
 	srv.ClearOperationHistory()
 	srv.LogStartup()
 	return http.ListenAndServe(":"+cfg.Port, srv)
+}
+
+// useRedHatOcMirror replaces the built-in oc-mirror with Red Hat's official
+// binary when OC_MIRROR_BINARY=redhat. The binary is downloaded from
+// OC_MIRROR_REDHAT_URL (default mirror.openshift.com), verified against the
+// published sha256sum.txt and cached under the data directory. Any failure is
+// logged and the built-in oc-mirror is used instead.
+func useRedHatOcMirror(cfg *server.Config) {
+	switch v := os.Getenv("OC_MIRROR_BINARY"); v {
+	case "", "built-in":
+		return
+	case "redhat":
+	default:
+		log.Printf("WARNING: ignoring OC_MIRROR_BINARY=%q (expected \"redhat\" or \"built-in\")", v)
+		return
+	}
+	cacheDir, err := filepath.Abs(filepath.Join(cfg.StorageDir, "bin"))
+	if err != nil {
+		log.Printf("WARNING: OC_MIRROR_BINARY=redhat: %v; using the built-in oc-mirror", err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+	path, err := ocmirrorbin.Fetch(ctx, ocmirrorbin.Options{
+		BaseURL:  os.Getenv("OC_MIRROR_REDHAT_URL"),
+		CacheDir: cacheDir,
+		Log:      func(line string) { log.Print(line) },
+	})
+	if err == nil {
+		_, err = ocmirrorbin.Version(ctx, path)
+	}
+	if err != nil {
+		log.Printf("WARNING: OC_MIRROR_BINARY=redhat: %v; using the built-in oc-mirror", err)
+		return
+	}
+	cfg.OcMirrorPath, cfg.OcMirrorSource = path, "redhat-runtime"
+	log.Printf("Using Red Hat oc-mirror: %s", path)
 }
 
 func envOr(key, fallback string) string {
@@ -85,15 +130,22 @@ func syncCatalogs(args []string) error {
 	pullSecret := fs.String("pull-secret", envOr("PULL_SECRET_PATH", "pull-secret/pull-secret.json"),
 		"registry auth file; falls back to REGISTRY_AUTH_FILE, then oc's default credentials (env PULL_SECRET_PATH)")
 	fs.IntVar(&parallel, "parallel", parallel, "catalogs extracted concurrently (env MAX_PARALLEL_JOBS)")
+	versionList := fs.String("ocp-versions", os.Getenv("CATALOG_OCP_VERSIONS"),
+		"OpenShift releases to sync, e.g. \"4.20 4.21 4.22 4.23\" (env CATALOG_OCP_VERSIONS; default "+strings.Join(catalogmeta.DefaultOCPVersions, " ")+")")
 	fs.Parse(args)
+	versions, err := catalogmeta.ParseOCPVersions(*versionList)
+	if err != nil {
+		return err
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	logger := log.New(os.Stdout, "", 0)
-	_, err := catalogmeta.Sync(ctx, catalogmeta.SyncOptions{
+	_, err = catalogmeta.Sync(ctx, catalogmeta.SyncOptions{
 		DataDir:        *dataDir,
 		RegistryConfig: catalogmeta.ResolveRegistryConfig(*pullSecret, os.Getenv("REGISTRY_AUTH_FILE")),
 		Parallel:       parallel,
+		OCPVersions:    versions,
 		RetryDelay:     2 * time.Second,
 		Log:            func(line string) { logger.Println(line) },
 	})

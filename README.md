@@ -56,6 +56,12 @@ cd mirror-gui
 ./local-build.sh --run
 ```
 
+By default the image compiles `oc-mirror` from source (the same upstream commit as Red Hat's newest build) with the current Go toolchain and patched Go modules, which clears the vulnerabilities reported in Red Hat's binary and keeps the image near 100 MB. To ship Red Hat's published binary instead, use `./local-build.sh --oc-mirror redhat` or `podman build --build-arg OC_MIRROR_FROM=redhat .`. Building from source needs network access to GitHub and the Go module proxy; use `redhat` for hermetic (offline/Konflux) builds.
+
+At run time, `-e OC_MIRROR_BINARY=redhat` makes the container download Red Hat's official `oc-mirror` from mirror.openshift.com at start-up (verified against the published `sha256sum.txt` and cached in `data/bin`, so later starts reuse it until Red Hat publishes a new build) and use it instead of the built-in one. `OC_MIRROR_REDHAT_URL` points at a different download location. If the download or verification fails, the built-in `oc-mirror` is used and a warning is logged.
+
+Platform channels can be `stable`, `fast`, `candidate` or `eus` for any release: pick one of the known releases or type a newer one such as 4.23 or 5.0 in the Mirror Configuration page. Operator catalogs are synced for OCP 4.16–4.22 by default; set `CATALOG_OCP_VERSIONS` (for example `"4.20 4.21 4.22 4.23"`) on the container or for `./sync-catalogs.sh` to sync other releases once Red Hat publishes their catalogs.
+
 Every build path runs `sync-catalogs.sh` to pull the latest Red Hat, Certified, and Community operator catalogs (OCP 4.16–4.22) before building the image. Use `--run` to skip fetching and building when you already have a local image.
 
 Open the URL printed by the script in your browser. By default it uses `http://localhost:3000`, but it automatically selects another free host port if `3000` is already in use. The `Web UI:` line in the script output shows the chosen address.

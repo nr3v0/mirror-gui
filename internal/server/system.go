@@ -21,6 +21,7 @@ var Version = "dev"
 
 type systemInfo struct {
 	AppVersion         string `json:"appVersion"`
+	OcMirrorSource     string `json:"ocMirrorSource"`
 	OcMirrorVersion    string `json:"ocMirrorVersion"`
 	SystemArchitecture string `json:"systemArchitecture"`
 	AvailableDiskSpace uint64 `json:"availableDiskSpace"`
@@ -79,7 +80,7 @@ func dirSize(dir string) int64 {
 
 func (s *Server) getSystemInfo() systemInfo {
 	version := "Not available"
-	if out, err := runCommand("oc-mirror", "version"); err == nil {
+	if out, err := runCommand(s.cfg.OcMirrorPath, "version"); err == nil {
 		version = parseOcMirrorVersion(strings.TrimSpace(out))
 	}
 	arch := machineArchitecture()
@@ -96,6 +97,7 @@ func (s *Server) getSystemInfo() systemInfo {
 
 	return systemInfo{
 		AppVersion:         Version,
+		OcMirrorSource:     s.cfg.OcMirrorSource,
 		OcMirrorVersion:    version,
 		SystemArchitecture: arch,
 		AvailableDiskSpace: available,
@@ -110,7 +112,7 @@ func (s *Server) getSystemInfo() systemInfo {
 const minHealthyDiskBytes = 30_000_000_000
 
 func (s *Server) getSystemHealth() string {
-	if _, err := runCommand("oc-mirror", "version"); err != nil {
+	if _, err := runCommand(s.cfg.OcMirrorPath, "version"); err != nil {
 		return "error"
 	}
 	if available, _, err := diskSpace(s.cfg.StorageDir); err != nil || available <= minHealthyDiskBytes {

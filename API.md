@@ -93,6 +93,7 @@ Get system information including versions, disk space, architecture, and cache d
 ```json
 {
   "appVersion": "5.0.0",
+  "ocMirrorSource": "source",
   "ocMirrorVersion": "4.21.0",
   "systemArchitecture": "x86_64",
   "availableDiskSpace": 480673603584,
@@ -106,6 +107,7 @@ Get system information including versions, disk space, architecture, and cache d
 
 **Response Fields:**
 - `appVersion`: The mirror-gui version the server was built with (`dev` for local builds)
+- `ocMirrorSource`: Where the active oc-mirror came from: `source` (compiled into the image from source), `redhat` (Red Hat's binary built into the image), `redhat-runtime` (Red Hat's binary downloaded at start-up via `OC_MIRROR_BINARY=redhat`), or empty when running outside the image
 - `hostDataDir`: The host-side data directory path
 - `cacheDir`: The cache directory inside the container
 - `hostCacheDir`: The cache directory mapped to the host path
@@ -367,19 +369,11 @@ Delete a configuration file.
 ### Platform Channels
 
 #### GET /api/channels
-Get available OpenShift Container Platform channels.
+List platform channel names (`<type>-<release>`) for the configured catalog releases (`CATALOG_OCP_VERSIONS`, default 4.16–4.22). Channel types are `stable`, `fast`, `candidate` and `eus`; EUS is listed for even-numbered 4.x releases only. Configurations may use any other release (e.g. `candidate-5.0`).
 
 **Response:**
 ```json
-{
-  "success": true,
-  "data": [
-    {
-      "name": "stable-4.18",
-      "description": "Stable 4.18 channel"
-    }
-  ]
-}
+["stable-4.16", "stable-4.17", "...", "fast-4.16", "...", "candidate-4.22", "eus-4.16", "eus-4.18", "eus-4.20", "eus-4.22"]
 ```
 
 ### Operator Catalogs and Discovery

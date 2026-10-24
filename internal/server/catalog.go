@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -273,10 +274,25 @@ func toDetailedOperator(op *OperatorEntry) detailedOperator {
 	}
 }
 
+// platformChannelTypes are the OpenShift update channel types.
+var platformChannelTypes = []string{"stable", "fast", "candidate", "eus"}
+
+// handleChannels lists the platform channels for the known releases. EUS
+// channels are only published for even-numbered 4.x releases. Releases not
+// listed here (e.g. 4.23 or 5.0) can still be used in a configuration.
 func (s *Server) handleChannels(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, []string{
-		"stable-4.16", "stable-4.17", "stable-4.18", "stable-4.19", "stable-4.20", "stable-4.21", "stable-4.22",
-	})
+	channels := []string{}
+	for _, channelType := range platformChannelTypes {
+		for _, version := range s.syncVersions {
+			var major, minor int
+			fmt.Sscanf(version, "%d.%d", &major, &minor)
+			if channelType == "eus" && major == 4 && minor%2 == 1 {
+				continue
+			}
+			channels = append(channels, channelType+"-"+version)
+		}
+	}
+	writeJSON(w, http.StatusOK, channels)
 }
 
 func (s *Server) handleCatalogs(w http.ResponseWriter, _ *http.Request) {

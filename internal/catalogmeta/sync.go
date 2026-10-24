@@ -6,9 +6,28 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
+
+// ParseOCPVersions splits a space- or comma-separated list such as
+// "4.20 4.21, 5.0" (a leading "v" is allowed). An empty list returns nil.
+func ParseOCPVersions(list string) ([]string, error) {
+	var out []string
+	for _, field := range strings.FieldsFunc(list, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
+		v := strings.TrimPrefix(field, "v")
+		if !releaseRe.MatchString(v) {
+			return nil, fmt.Errorf("invalid OpenShift release %q: use major.minor, e.g. 4.23 or 5.0", field)
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+var releaseRe = regexp.MustCompile(`^\d+\.\d+$`)
 
 // Catalogs synced by default: every catalog type for every supported OCP version.
 var (

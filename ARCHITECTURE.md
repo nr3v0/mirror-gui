@@ -93,7 +93,7 @@ The Dockerfile uses a multi-stage build:
 | Stage | Purpose |
 |-------|---------|
 | `frontend` | Node.js stage: installs npm dependencies and runs `vite build` (without source maps) |
-| `builder` | `go-toolset` stage: compiles the static Go binary, fetches oc-mirror v2 for the target architecture (AMD64/ARM64) and strips its debug symbols, and collects the built-in catalog metadata |
+| `builder` | `go-toolset` stage: compiles the static Go binary, provides oc-mirror v2 for the target architecture (AMD64/ARM64), and collects the built-in catalog metadata. `OC_MIRROR_FROM=source` (default) compiles oc-mirror from `github.com/openshift/oc-mirror` at `OC_MIRROR_REF` with the current Go toolchain after upgrading the modules listed in `OC_MIRROR_GO_UPGRADES` (v2 CLI only, without the embedded v1 binary); `OC_MIRROR_FROM=redhat` uses Red Hat's published binary with its debug symbols stripped |
 | final | `scratch` (no OS packages or shell): the static Go binary, oc-mirror, the built frontend, catalog data, CA certificates, `/etc/passwd`, and `/tmp`. The builder stage assembles this root filesystem. |
 
 The container starts the Go binary as root; because `MIRROR_GUI_RUN_AS=1001:0` is set, it fixes ownership of the mounted `/app/data` volume and pull secret and then switches to uid 1001 before serving. It exposes port 3001 internally. Both `mirror-gui.sh` (the primary run entrypoint) and `local-build.sh` (build-and-run for development) map it to port 3000 on the host, falling back to the next available port if 3000 is in use.

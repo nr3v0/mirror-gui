@@ -15,6 +15,7 @@
 #   PULL_SECRET_PATH   - path to pull secret JSON file (default: pull-secret/pull-secret.json)
 #   REGISTRY_AUTH_FILE - fallback auth file path (commonly set by Prow CI)
 #   MAX_PARALLEL_JOBS  - max concurrent catalog extractions (default: 3)
+#   CATALOG_OCP_VERSIONS - OpenShift releases to sync, e.g. "4.21 4.22 4.23" (default: 4.16-4.22)
 #   MIRROR_GUI_BIN     - prebuilt mirror-gui binary to use instead of building one
 
 set -euo pipefail

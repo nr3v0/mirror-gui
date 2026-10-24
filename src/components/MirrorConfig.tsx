@@ -154,7 +154,41 @@ interface CleanConfig {
 
 type VersionField = 'minVersion' | 'maxVersion';
 
+// Releases offered in the platform channel version picker. Any other X.Y
+// (e.g. a future 4.23 or 5.0) can be typed in.
 const OCP_VERSIONS = ['4.16', '4.17', '4.18', '4.19', '4.20', '4.21', '4.22'];
+
+const PLATFORM_CHANNEL_TYPES = [
+  { value: 'stable', description: 'General availability releases, after time in fast. Recommended.' },
+  { value: 'fast', description: 'General availability releases as soon as they are published.' },
+  { value: 'candidate', description: 'Release candidates and the newest builds. Not supported for production.' },
+  { value: 'eus', description: 'Extended Update Support. Published for even-numbered 4.x releases.' },
+];
+
+/** Splits a channel name like "eus-4.22" into its type and X.Y version. */
+const parsePlatformChannelName = (name: string): { type: string; version: string } => {
+  const match = name.match(/^([a-z]+)-(\d+\.\d+)$/);
+  return match ? { type: match[1], version: match[2] } : { type: 'stable', version: getChannelVersionLine(name) ?? '' };
+};
+
+const isValidChannelVersion = (version: string): boolean => /^\d+\.\d+$/.test(version);
+
+/** Orders "major.minor" releases numerically (4.9 < 4.10 < 5.0). */
+const compareReleases = (a: string, b: string): number => {
+  const [aMajor, aMinor] = a.split('.').map(Number);
+  const [bMajor, bMinor] = b.split('.').map(Number);
+  return aMajor - bMajor || aMinor - bMinor;
+};
+
+/** Returns a warning for channel names that Red Hat does not publish. */
+const getPlatformChannelNameWarning = (name: string): string => {
+  const { type, version } = parsePlatformChannelName(name);
+  const [major, minor] = version.split('.').map(Number);
+  if (type === 'eus' && major === 4 && minor % 2 === 1) {
+    return `EUS channels are only published for even-numbered 4.x releases; eus-${version} does not exist.`;
+  }
+  return '';
+};
 
 const FALLBACK_CATALOGS: CatalogInfo[] = [
   {
@@ -472,6 +506,10 @@ const MirrorConfig: React.FC = () => {
   const clearAllErrors = () => setValidationErrors({});
 
   const [channelSelectOpen, setChannelSelectOpen] = useState<Record<number, boolean>>({});
+
+  const setPlatformChannelName = (index: number, type: string, version: string) => {
+    updatePlatformChannel(index, 'name', `${type}-${version}`);
+  };
   const [catalogSelectOpen, setCatalogSelectOpen] = useState<Record<number, boolean>>({});
   const [opChannelSelectOpen, setOpChannelSelectOpen] = useState<Record<string, boolean>>({});
   const [opMinVersionSelectOpen, setOpMinVersionSelectOpen] = useState<Record<string, boolean>>({});
@@ -1600,35 +1638,76 @@ const MirrorConfig: React.FC = () => {
                 {(_helpers, index) => {
                   const channel = config.mirror.platform.channels[index];
                   return [
-                    <Select
-                      key="channel"
-                      id={`platform-ch-name-${index}`}
-                      isOpen={channelSelectOpen[index] || false}
-                      selected={channel.name}
-                      onSelect={(_e, val) => {
-                        updatePlatformChannel(index, 'name', val as string);
-                        setChannelSelectOpen(prev => ({ ...prev, [index]: false }));
-                      }}
-                      onOpenChange={(open) => setChannelSelectOpen(prev => ({ ...prev, [index]: open }))}
-                      toggle={(toggleRef) => (
-                        <MenuToggle
-                          ref={toggleRef}
-                          onClick={() => setChannelSelectOpen(prev => ({ ...prev, [index]: !prev[index] }))}
-                          isExpanded={channelSelectOpen[index] || false}
-                          style={{ width: '100%' }}
-                        >
-                          {channel.name || 'Select channel...'}
-                        </MenuToggle>
-                      )}
-                    >
-                      <SelectList>
-                        {OCP_VERSIONS.map(v => (
-                          <SelectOption key={v} value={`stable-${v}`}>
-                            stable-{v}
-                          </SelectOption>
-                        ))}
-                      </SelectList>
-                    </Select>,
+                    <div key="channel">
+                      <Split hasGutter>
+                        <SplitItem style={{ minWidth: '9rem' }}>
+                          <Select
+                            id={`platform-ch-type-${index}`}
+                            isOpen={channelSelectOpen[index] || false}
+                            selected={parsePlatformChannelName(channel.name).type}
+                            onSelect={(_e, val) => {
+                              setPlatformChannelName(index, val as string, parsePlatformChannelName(channel.name).version);
+                              setChannelSelectOpen(prev => ({ ...prev, [index]: false }));
+                            }}
+                            onOpenChange={(open) => setChannelSelectOpen(prev => ({ ...prev, [index]: open }))}
+                            toggle={(toggleRef) => (
+                              <MenuToggle
+                                ref={toggleRef}
+                                onClick={() => setChannelSelectOpen(prev => ({ ...prev, [index]: !prev[index] }))}
+                                isExpanded={channelSelectOpen[index] || false}
+                                aria-label={`Channel type for channel ${index + 1}`}
+                                style={{ width: '100%' }}
+                              >
+                                {parsePlatformChannelName(channel.name).type}
+                              </MenuToggle>
+                            )}
+                          >
+                            <SelectList>
+                              {PLATFORM_CHANNEL_TYPES.map(t => (
+                                <SelectOption key={t.value} value={t.value} description={t.description}>
+                                  {t.value}
+                                </SelectOption>
+                              ))}
+                            </SelectList>
+                          </Select>
+                        </SplitItem>
+                        <SplitItem isFilled>
+                          <TypeaheadSelect
+                            key={`platform-ch-version-${index}-${channel.name}`}
+                            id={`platform-ch-version-${index}`}
+                            initialOptions={Array.from(new Set([...OCP_VERSIONS, parsePlatformChannelName(channel.name).version]))
+                              .filter(Boolean)
+                              .sort(compareReleases)
+                              .map((v): TypeaheadSelectOption => ({
+                                value: v,
+                                content: v,
+                                selected: v === parsePlatformChannelName(channel.name).version,
+                              }))}
+                            onSelect={(_e, value) => {
+                              const version = String(value ?? '').trim();
+                              if (!version) return;
+                              if (!isValidChannelVersion(version)) {
+                                addDangerAlert(`"${version}" is not a release version; use major.minor, e.g. 4.23 or 5.0`);
+                                return;
+                              }
+                              setPlatformChannelName(index, parsePlatformChannelName(channel.name).type, version);
+                            }}
+                            isCreatable
+                            createOptionMessage={(v) => `Use release "${v}"`}
+                            placeholder="Release, e.g. 4.22"
+                            noOptionsFoundMessage={(filter) => `Type a release such as 4.23 or 5.0 ("${filter}")`}
+                            toggleProps={{ isFullWidth: true, className: 'hide-typeahead-clear' }}
+                          />
+                        </SplitItem>
+                      </Split>
+                      <HelperText className="pf-v6-u-mt-xs">
+                        {getPlatformChannelNameWarning(channel.name) ? (
+                          <HelperTextItem variant="warning">{getPlatformChannelNameWarning(channel.name)}</HelperTextItem>
+                        ) : (
+                          <HelperTextItem>Channel: <code>{channel.name}</code></HelperTextItem>
+                        )}
+                      </HelperText>
+                    </div>,
 
                     <div key="versions">
                       <Split hasGutter>

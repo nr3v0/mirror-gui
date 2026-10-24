@@ -57,6 +57,7 @@ interface SystemStatus {
 }
 
 interface SystemInfo {
+  ocMirrorSource?: string;
   availableDiskSpace: number;
   totalDiskSpace: number;
   systemArchitecture: string;
@@ -64,6 +65,13 @@ interface SystemInfo {
   hostCacheDir: string;
   cacheSizeBytes: number;
 }
+
+// Where the active oc-mirror binary came from (ocMirrorSource in /api/system/info).
+const OC_MIRROR_SOURCE_LABELS: Record<string, string> = {
+  source: 'Built from source',
+  redhat: 'Red Hat build',
+  'redhat-runtime': 'Red Hat build (downloaded)',
+};
 
 type LabelStatus = 'success' | 'warning' | 'danger' | 'info' | 'custom';
 
@@ -254,6 +262,11 @@ const Dashboard: React.FC = () => {
                 </DescriptionListTerm>
                 <DescriptionListDescription>
                   {systemStatus.ocMirrorVersion || 'Not available'}
+                  {OC_MIRROR_SOURCE_LABELS[systemInfo.ocMirrorSource ?? ''] && (
+                    <Label isCompact color="grey" className="pf-v6-u-ml-sm">
+                      {OC_MIRROR_SOURCE_LABELS[systemInfo.ocMirrorSource ?? '']}
+                    </Label>
+                  )}
                 </DescriptionListDescription>
               </DescriptionListGroup>
               <DescriptionListGroup>

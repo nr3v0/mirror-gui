@@ -34,6 +34,7 @@ Tests use only the standard library. API tests drive the real `http.Handler` wit
 | `internal/server/utils_test.go`          | Registry prefix reduction, version parsing and sorting, catalog name resolution, channel extraction/normalization, path availability, optional oc-mirror flag validation, JSON-to-YAML conversion, catalog sync diff |
 | `internal/server/api_test.go`            | Every REST endpoint: health, catalogs, operators/channels/versions/dependencies, config save/upload/download/delete, mirror folders, pull secret, registry verification (including the token flow against a local TLS registry), system info/status/paths, cache cleanup, operation list/stats/start/stop/delete/logs/details, SSE log streaming, oc-mirror success/failure/stop handling, image previews (dry-run workspace and port, mapping.txt parsing, image list endpoints), catalog sync (missing pull secret and a full run against an in-memory registry), SPA serving, CORS |
 | `internal/catalogmeta/catalogmeta_test.go` | FBC metadata generation compared against golden files produced by the former Python implementation (`testdata/`), version ordering, bundle-name versions, `catalog-info.json` / `catalog-index.json` output, auth-file keychain, `Sync` against an in-memory registry (linux/amd64 selection, digests, retries, partial failure) |
+| `internal/ocmirrorbin/ocmirrorbin_test.go` | Runtime Red Hat oc-mirror download: checksum verification against `sha256sum.txt`, caching across restarts, re-download on a new build, mismatch and missing-binary errors |
 
 
 ---
@@ -135,7 +136,7 @@ npm run audit:fetch-catalogs
 
 | Category           | Files  | Test Cases |
 | ------------------ | ------ | ---------- |
-| Go (unit + API)    | 3      | 53         |
+| Go (unit + API)    | 4      | 60         |
 | Scripts (Vitest)   | 3      | 10         |
-| E2E (Playwright)   | 11     | 96         |
-| **Total**          | **17** | **159**    |
+| E2E (Playwright)   | 12     | 100        |
+| **Total**          | **19** | **170**    |

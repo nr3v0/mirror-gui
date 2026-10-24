@@ -32,17 +32,62 @@ RUN CGO_ENABLED=0 go build -trimpath \
         -o /out/app/mirror-gui ./cmd/mirror-gui && \
     mkdir -p /out/app/data
 
-# oc-mirror is prefetched by Konflux (cachi2) or downloaded; its debug symbols are stripped.
+# oc-mirror, from one of two sources (build argument OC_MIRROR_FROM):
+#   source (default): compile github.com/openshift/oc-mirror at OC_MIRROR_REF with
+#     this stage's Go toolchain, after upgrading the modules in OC_MIRROR_GO_UPGRADES
+#     (set it to "" to build upstream unmodified). Only the v2 CLI is built; the
+#     embedded v1 binary (used by --v1 only) is left out. Needs network access.
+#   redhat: Red Hat's published binary, prefetched by Konflux (cachi2) or downloaded.
+ARG OC_MIRROR_FROM=source
+ARG OC_MIRROR_REPO=https://github.com/openshift/oc-mirror.git
+# The commit of Red Hat's oc-mirror 2.0.0-202610201601 build.
+ARG OC_MIRROR_REF=c4d52faef556ec6778b200005df679bf981aec4e
+ARG OC_MIRROR_GO_UPGRADES="\
+    golang.org/x/net@latest \
+    golang.org/x/crypto@latest \
+    github.com/distribution/distribution/v3@latest \
+    github.com/google/cel-go@v0.31.0 \
+    go.opentelemetry.io/otel/sdk@latest \
+    go.opentelemetry.io/otel/sdk/log@latest \
+    go.opentelemetry.io/otel/exporters/otlp/otlptrace@latest \
+    go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc@latest \
+    go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@latest \
+    go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc@latest"
 RUN set -eux; \
     arch=amd64; [ "$TARGETARCH" = arm64 ] && arch=arm64; \
-    file="oc-mirror-rhel9-linux-${arch}.tar.gz"; \
-    src="/cachi2/output/deps/generic/$file"; \
-    if [ ! -f "$src" ]; then \
-      src="/tmp/$file"; \
-      curl -fsSL --retry 5 -o "$src" "https://mirror.openshift.com/pub/cgw/oc-mirror/latest/$file"; \
-    fi; \
-    tar --no-same-owner -xzf "$src" -C /out oc-mirror; \
-    strip /out/oc-mirror; \
+    case "$OC_MIRROR_FROM" in \
+    source) \
+      src=/tmp/oc-mirror-src; \
+      git init -q "$src"; \
+      git -C "$src" fetch -q --depth 1 "$OC_MIRROR_REPO" "$OC_MIRROR_REF"; \
+      git -C "$src" checkout -q FETCH_HEAD; \
+      commit=$(git -C "$src" rev-parse --short=8 HEAD); \
+      cd "$src"; \
+      if [ -n "$(echo $OC_MIRROR_GO_UPGRADES)" ]; then \
+        go get $OC_MIRROR_GO_UPGRADES; \
+        go mod tidy; \
+      fi; \
+      pkg=github.com/openshift/oc-mirror/v2/internal/pkg/version; \
+      CGO_ENABLED=0 GOARCH="$arch" go build -mod=readonly -trimpath \
+        -tags "json1 exclude_graphdriver_devicemapper exclude_graphdriver_btrfs containers_image_openpgp" \
+        -ldflags "-s -w -X $pkg.versionFromGit=v2.0.0-source-$commit -X $pkg.commitFromGit=$commit \
+          -X $pkg.majorFromGit=2 -X $pkg.minorFromGit=0 -X $pkg.gitTreeState=patched \
+          -X $pkg.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        -o /out/oc-mirror ./cmd/oc-mirror; \
+      cd /; rm -rf "$src"; \
+      ;; \
+    redhat) \
+      file="oc-mirror-rhel9-linux-${arch}.tar.gz"; \
+      tarball="/cachi2/output/deps/generic/$file"; \
+      if [ ! -f "$tarball" ]; then \
+        tarball="/tmp/$file"; \
+        curl -fsSL --retry 5 -o "$tarball" "https://mirror.openshift.com/pub/cgw/oc-mirror/latest/$file"; \
+      fi; \
+      tar --no-same-owner -xzf "$tarball" -C /out oc-mirror; \
+      strip /out/oc-mirror; \
+      ;; \
+    *) echo "OC_MIRROR_FROM must be 'source' or 'redhat', got '$OC_MIRROR_FROM'" >&2; exit 1 ;; \
+    esac; \
     /out/oc-mirror version --output=json
 
 # Built-in catalog metadata: catalog-data-synced (injected by CI) or catalog-data, without raw configs.
@@ -77,6 +122,7 @@ RUN set -eux; \
 
 FROM scratch
 
+ARG OC_MIRROR_FROM=source
 ARG BUILD_DATE=""
 ARG VCS_REF=""
 ARG VERSION=dev
@@ -90,10 +136,14 @@ LABEL org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.title="Mirror-GUI Application" \
       org.opencontainers.image.description="Web application for OpenShift Container Platform mirroring operations" \
-      org.opencontainers.image.source="https://github.com/nr3v0/mirror-gui"
+      org.opencontainers.image.source="https://github.com/nr3v0/mirror-gui" \
+      io.github.nr3v0.mirror-gui.oc-mirror="${OC_MIRROR_FROM}"
 
 WORKDIR /app
 # The server starts as root, fixes ownership of mounted data, then runs as uid 1001.
-ENV HOME=/app PATH=/usr/local/bin MIRROR_GUI_RUN_AS=1001:0
+# OC_MIRROR_BUILT_FROM records where the built-in oc-mirror came from. Set
+# OC_MIRROR_BINARY=redhat at run time to download and use Red Hat's official
+# oc-mirror instead (verified, cached in /app/data/bin; needs internet access).
+ENV HOME=/app PATH=/usr/local/bin MIRROR_GUI_RUN_AS=1001:0 OC_MIRROR_BUILT_FROM=${OC_MIRROR_FROM}
 EXPOSE 3001
 ENTRYPOINT ["/app/mirror-gui"]
