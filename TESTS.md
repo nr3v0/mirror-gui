@@ -138,5 +138,5 @@ npm run audit:fetch-catalogs
 | ------------------ | ------ | ---------- |
 | Go (unit + API)    | 4      | 60         |
 | Scripts (Vitest)   | 3      | 10         |
-| E2E (Playwright)   | 12     | 100        |
-| **Total**          | **19** | **170**    |
+| E2E (Playwright)   | 13     | 102        |
+| **Total**          | **20** | **172**    |

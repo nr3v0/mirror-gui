@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import YAML from 'yaml';
 import { useAlerts } from '../AlertContext';
+import { copyText } from '../utils/clipboard';
 import YamlHighlighter from './YamlHighlighter';
 import {
   Alert,
@@ -2114,9 +2115,9 @@ const MirrorConfig: React.FC = () => {
                       <Button
                         variant="secondary"
                         icon={<CopyIcon />}
-                        onClick={() => {
-                          navigator.clipboard.writeText(isEditingPreview ? editedYaml : yamlPreview);
-                          addSuccessAlert('YAML configuration copied to clipboard!');
+                        onClick={async () => {
+                          if (await copyText(isEditingPreview ? editedYaml : yamlPreview)) addSuccessAlert('YAML configuration copied to clipboard!');
+                          else addDangerAlert('Failed to copy YAML configuration');
                         }}
                       >
                         Copy YAML

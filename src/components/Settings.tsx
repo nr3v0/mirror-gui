@@ -48,6 +48,7 @@ import {
 } from '@patternfly/react-icons';
 import { Table, Thead, Tbody, Tr, Th, Td } from '@patternfly/react-table';
 import { useAlerts } from '../AlertContext';
+import { copyText } from '../utils/clipboard';
 
 interface RegistryEntry {
   registry: string;
@@ -342,24 +343,8 @@ const SettingsPage: React.FC = () => {
 
   const copyRestartCommand = async () => {
     if (!generatedRestartCommand) return;
-    try {
-      await navigator.clipboard.writeText(generatedRestartCommand);
-      addSuccessAlert('Command copied to clipboard');
-    } catch {
-      const textArea = document.createElement('textarea');
-      textArea.value = generatedRestartCommand;
-      textArea.style.position = 'fixed';
-      textArea.style.opacity = '0';
-      document.body.appendChild(textArea);
-      textArea.select();
-      try {
-        document.execCommand('copy');
-        addSuccessAlert('Command copied to clipboard');
-      } catch {
-        addDangerAlert('Could not copy to clipboard');
-      }
-      document.body.removeChild(textArea);
-    }
+    if (await copyText(generatedRestartCommand)) addSuccessAlert('Command copied to clipboard');
+    else addDangerAlert('Could not copy to clipboard');
   };
 
   const cleanupCache = async () => {
@@ -819,9 +804,9 @@ const SettingsPage: React.FC = () => {
                                         variant="plain"
                                         isInline
                                         icon={<CopyIcon />}
-                                        onClick={() => {
-                                          navigator.clipboard.writeText(cat.digest || '');
-                                          addSuccessAlert('Digest copied');
+                                        onClick={async () => {
+                                          if (await copyText(cat.digest || '')) addSuccessAlert('Digest copied');
+                                          else addDangerAlert('Could not copy to clipboard');
                                         }}
                                         aria-label="Copy digest"
                                         style={{ padding: 0 }}

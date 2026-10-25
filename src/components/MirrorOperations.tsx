@@ -44,6 +44,10 @@ import {
   ExpandableSectionToggle,
   Switch,
   NumberInput,
+  SearchInput,
+  Tab,
+  Tabs,
+  TabTitleText,
 } from '@patternfly/react-core';
 import {
   SyncAltIcon,
@@ -66,6 +70,7 @@ import {
 } from '@patternfly/react-icons';
 import { Table, Thead, Tbody, Tr, Th, Td } from '@patternfly/react-table';
 import { useAlerts } from '../AlertContext';
+import { copyText } from '../utils/clipboard';
 
 interface ConfigFile {
   name: string;
@@ -94,6 +99,7 @@ interface RegistryCount {
 interface ImagePreview {
   imageCount: number;
   registries: RegistryCount[];
+  images: string[];
 }
 
 interface OptionalFlags {
@@ -349,6 +355,8 @@ const MirrorOperations: React.FC = () => {
   const [previewOperation, setPreviewOperation] = useState<Operation | null>(null);
   const [previewData, setPreviewData] = useState<ImagePreview | null>(null);
   const [previewError, setPreviewError] = useState('');
+  const [previewTab, setPreviewTab] = useState<'registries' | 'images'>('registries');
+  const [previewFilter, setPreviewFilter] = useState('');
 
   const operationsRef = useRef<Operation[]>([]);
   const notifiedOperationsRef = useRef(new Set<string>());
@@ -378,6 +386,8 @@ const MirrorOperations: React.FC = () => {
     setPreviewOperation(op);
     setPreviewData(null);
     setPreviewError('');
+    setPreviewTab('registries');
+    setPreviewFilter('');
     axios.get<ImagePreview>(`/api/operations/${op.id}/images`)
       .then(res => setPreviewData(res.data))
       .catch((error: { response?: { data?: { error?: string } }; message?: string }) => {
@@ -744,27 +754,14 @@ const MirrorOperations: React.FC = () => {
     copyToClipboard(getMirrorFullPath(mirrorDestination), 'Full path copied to clipboard!', 'Failed to copy path');
 
   const copyToClipboard = async (text: string, successMessage: string, failureMessage: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      addSuccessAlert(successMessage);
-    } catch {
-      const textArea = document.createElement('textarea');
-      textArea.value = text;
-      textArea.style.position = 'fixed';
-      textArea.style.opacity = '0';
-      document.body.appendChild(textArea);
-      textArea.select();
-      try {
-        document.execCommand('copy');
-        addSuccessAlert(successMessage);
-      } catch {
-        addDangerAlert(failureMessage);
-      }
-      document.body.removeChild(textArea);
-    }
+    if (await copyText(text)) addSuccessAlert(successMessage);
+    else addDangerAlert(failureMessage);
   };
 
   const isDeleteConfig = deleteFilename && !deleteOperationId;
+
+  const filteredPreviewImages = (previewData?.images ?? []).filter(img =>
+    img.toLowerCase().includes(previewFilter.trim().toLowerCase()));
 
   const filteredOps = operations.filter(op => {
     if (opsFilter === 'all') return true;
@@ -1631,7 +1628,7 @@ const MirrorOperations: React.FC = () => {
       >
         <ModalHeader
           title="Image Sources"
-          description={previewOperation ? `Registries that ${previewOperation.configFile} pulls images from (registry host and first path segment).` : undefined}
+          description={previewOperation ? `Images that ${previewOperation.configFile} pulls, grouped by registry host and first path segment.` : undefined}
         />
         <ModalBody>
           {previewError && <Alert variant="danger" isInline title={previewError} />}
@@ -1642,22 +1639,51 @@ const MirrorOperations: React.FC = () => {
                 <strong>{previewData.imageCount}</strong> image{previewData.imageCount !== 1 ? 's' : ''} from{' '}
                 <strong>{previewData.registries.length}</strong> registr{previewData.registries.length !== 1 ? 'ies' : 'y'}
               </p>
-              <Table aria-label="Image sources" variant="compact">
-                <Thead>
-                  <Tr>
-                    <Th>Registry</Th>
-                    <Th modifier="fitContent">Images</Th>
-                  </Tr>
-                </Thead>
-                <Tbody>
-                  {previewData.registries.map(r => (
-                    <Tr key={r.prefix}>
-                      <Td dataLabel="Registry"><code>{r.prefix}</code></Td>
-                      <Td dataLabel="Images">{r.count}</Td>
-                    </Tr>
-                  ))}
-                </Tbody>
-              </Table>
+              <Tabs
+                activeKey={previewTab}
+                onSelect={(_event, key) => setPreviewTab(key as 'registries' | 'images')}
+                aria-label="Image source views"
+                mountOnEnter
+              >
+                <Tab eventKey="registries" title={<TabTitleText>Registries ({previewData.registries.length})</TabTitleText>}>
+                  <Table aria-label="Image sources" variant="compact">
+                    <Thead>
+                      <Tr>
+                        <Th>Registry</Th>
+                        <Th modifier="fitContent">Images</Th>
+                      </Tr>
+                    </Thead>
+                    <Tbody>
+                      {previewData.registries.map(r => (
+                        <Tr key={r.prefix}>
+                          <Td dataLabel="Registry"><code>{r.prefix}</code></Td>
+                          <Td dataLabel="Images">{r.count}</Td>
+                        </Tr>
+                      ))}
+                    </Tbody>
+                  </Table>
+                </Tab>
+                <Tab eventKey="images" title={<TabTitleText>Images ({previewData.images.length})</TabTitleText>}>
+                  <SearchInput
+                    className="pf-v6-u-my-md"
+                    placeholder="Filter images"
+                    aria-label="Filter images"
+                    value={previewFilter}
+                    onChange={(_event, value) => setPreviewFilter(value)}
+                    onClear={() => setPreviewFilter('')}
+                    resultsCount={previewFilter ? `${filteredPreviewImages.length} / ${previewData.images.length}` : undefined}
+                  />
+                  <div
+                    role="list"
+                    aria-label="Images"
+                    style={{ maxHeight: '50vh', overflow: 'auto', fontFamily: 'var(--pf-t--global--font--family--mono)', fontSize: 'var(--pf-t--global--font--size--sm)' }}
+                  >
+                    {filteredPreviewImages.map(img => (
+                      <div role="listitem" key={img} style={{ padding: '2px 0', wordBreak: 'break-all' }}>{img}</div>
+                    ))}
+                  </div>
+                </Tab>
+              </Tabs>
             </>
           )}
         </ModalBody>
@@ -1666,13 +1692,19 @@ const MirrorOperations: React.FC = () => {
             variant="primary"
             icon={<CopyIcon />}
             isDisabled={!previewData}
-            onClick={() => previewData && void copyToClipboard(
-              previewData.registries.map(r => r.prefix).join('\n'),
-              'Registry list copied to clipboard!',
-              'Failed to copy registry list',
-            )}
+            onClick={() => previewData && void (previewTab === 'registries'
+              ? copyToClipboard(
+                previewData.registries.map(r => r.prefix).join('\n'),
+                'Registry list copied to clipboard!',
+                'Failed to copy registry list',
+              )
+              : copyToClipboard(
+                filteredPreviewImages.join('\n'),
+                'Image list copied to clipboard!',
+                'Failed to copy image list',
+              ))}
           >
-            Copy Registries
+            {previewTab === 'registries' ? 'Copy Registries' : previewFilter ? 'Copy Filtered Images' : 'Copy Images'}
           </Button>
           <Button
             variant="secondary"
