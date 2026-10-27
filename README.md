@@ -58,6 +58,15 @@ cd mirror-gui
 
 By default the image compiles `oc-mirror` from source (the same upstream commit as Red Hat's newest build) with the current Go toolchain and patched Go modules, which clears the vulnerabilities reported in Red Hat's binary and keeps the image near 100 MB. To ship Red Hat's published binary instead, use `./local-build.sh --oc-mirror redhat` or `podman build --build-arg OC_MIRROR_FROM=redhat .`. Building from source needs network access to GitHub and the Go module proxy; use `redhat` for hermetic (offline/Konflux) builds.
 
+### Multi-arch release images
+
+```bash
+# Build a manifest list for linux/amd64 and linux/arm64 and push it to quay.io
+./release.sh --push 5.2.0
+```
+
+`release.sh` cross-compiles every architecture on the build host (no QEMU needed) and tags the manifest list `vVERSION`, the short git commit and `latest` (`--no-latest` skips `latest`). Use `--platforms linux/amd64,linux/arm64,linux/ppc64le,linux/s390x` for more architectures and `--image` for another repository. Without `--push` it only builds. Pulling `quay.io/nr3v0/mirror-gui` selects the image for the host's architecture automatically.
+
 At run time, `-e OC_MIRROR_BINARY=redhat` makes the container download Red Hat's official `oc-mirror` from mirror.openshift.com at start-up (verified against the published `sha256sum.txt` and cached in `data/bin`, so later starts reuse it until Red Hat publishes a new build) and use it instead of the built-in one. `OC_MIRROR_REDHAT_URL` points at a different download location. If the download or verification fails, the built-in `oc-mirror` is used and a warning is logged.
 
 Platform channels can be `stable`, `fast`, `candidate` or `eus` for any release: pick one of the known releases or type a newer one such as 4.23 or 5.0 in the Mirror Configuration page. Operator catalogs are synced for OCP 4.16–4.22 by default; set `CATALOG_OCP_VERSIONS` (for example `"4.20 4.21 4.22 4.23"`) on the container or for `./sync-catalogs.sh` to sync other releases once Red Hat publishes their catalogs.
@@ -130,7 +139,7 @@ Configure environment preferences across four tabs:
 | **oc-mirror** | v2 |
 | **OpenShift** | 4.16 – 4.22 |
 | **Container runtime** | Podman 5.0+ |
-| **Architecture** | AMD64 (x86_64), ARM64 (aarch64) |
+| **Architecture** | AMD64 (x86_64), ARM64 (aarch64); ppc64le and s390x can be built with `release.sh --platforms` |
 
 ## Troubleshooting
 

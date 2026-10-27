@@ -88,12 +88,12 @@ The sync script processes three catalog types (Red Hat, Certified, Community) ac
 
 ### Container Architecture
 
-The Dockerfile uses a multi-stage build:
+The Dockerfile uses a multi-stage build. Every stage that runs commands uses the build host's platform (`--platform=$BUILDPLATFORM`) and Go cross-compiles for `TARGETARCH`, so `podman build --platform linux/amd64,linux/arm64 --manifest ...` (what `release.sh` runs) builds all architectures natively without emulation; only the final `scratch` image differs per architecture.
 
 | Stage | Purpose |
 |-------|---------|
 | `frontend` | Node.js stage: installs npm dependencies and runs `vite build` (without source maps) |
-| `builder` | `go-toolset` stage: compiles the static Go binary, provides oc-mirror v2 for the target architecture (AMD64/ARM64), and collects the built-in catalog metadata. `OC_MIRROR_FROM=source` (default) compiles oc-mirror from `github.com/openshift/oc-mirror` at `OC_MIRROR_REF` with the current Go toolchain after upgrading the modules listed in `OC_MIRROR_GO_UPGRADES` (v2 CLI only, without the embedded v1 binary); `OC_MIRROR_FROM=redhat` uses Red Hat's published binary with its debug symbols stripped |
+| `builder` | `go-toolset` stage: compiles the static Go binary, provides oc-mirror v2 for the target architecture (amd64, arm64, ppc64le or s390x), and collects the built-in catalog metadata. `OC_MIRROR_FROM=source` (default) compiles oc-mirror from `github.com/openshift/oc-mirror` at `OC_MIRROR_REF` with the current Go toolchain after upgrading the modules listed in `OC_MIRROR_GO_UPGRADES` (v2 CLI only, without the embedded v1 binary); `OC_MIRROR_FROM=redhat` uses Red Hat's published binary with its debug symbols stripped |
 | final | `scratch` (no OS packages or shell): the static Go binary, oc-mirror, the built frontend, catalog data, CA certificates, `/etc/passwd`, and `/tmp`. The builder stage assembles this root filesystem. |
 
 The container starts the Go binary as root; because `MIRROR_GUI_RUN_AS=1001:0` is set, it fixes ownership of the mounted `/app/data` volume and pull secret and then switches to uid 1001 before serving. It exposes port 3001 internally. Both `mirror-gui.sh` (the primary run entrypoint) and `local-build.sh` (build-and-run for development) map it to port 3000 on the host, falling back to the next available port if 3000 is in use.

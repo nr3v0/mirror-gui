@@ -1,5 +1,9 @@
+# Multi-arch builds (podman build --platform linux/amd64,linux/arm64) cross-compile:
+# every stage that runs commands uses the build host's platform, Go builds for
+# TARGETARCH, and only the final scratch image differs per architecture.
+
 # Frontend: the only stage that uses Node.js.
-FROM registry.access.redhat.com/ubi9/nodejs-22-minimal AS frontend
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/nodejs-22-minimal AS frontend
 USER root
 WORKDIR /src
 COPY package.json package-lock.json .npmrc ./
@@ -12,12 +16,12 @@ RUN VITE_SOURCEMAP=false npx vite build
 
 # The app version, captured here because go-toolset defines its own VERSION
 # environment variable, which would shadow the build argument in that stage.
-FROM registry.access.redhat.com/ubi9/ubi-micro AS version
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/ubi-micro AS version
 ARG VERSION=dev
 RUN echo "$VERSION" > /version
 
 # Backend binary, oc-mirror and built-in catalog data.
-FROM registry.access.redhat.com/ubi9/go-toolset:1.26 AS builder
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/go-toolset:1.26 AS builder
 USER root
 ARG TARGETARCH
 WORKDIR /src
@@ -27,7 +31,7 @@ RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 COPY --from=version /version /tmp/version
-RUN CGO_ENABLED=0 go build -trimpath \
+RUN CGO_ENABLED=0 GOARCH="${TARGETARCH:-$(go env GOARCH)}" go build -trimpath \
         -ldflags="-s -w -X github.com/nr3v0/mirror-gui/internal/server.Version=$(cat /tmp/version)" \
         -o /out/app/mirror-gui ./cmd/mirror-gui && \
     mkdir -p /out/app/data
@@ -54,7 +58,7 @@ ARG OC_MIRROR_GO_UPGRADES="\
     go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp@latest \
     go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc@latest"
 RUN set -eux; \
-    arch=amd64; [ "$TARGETARCH" = arm64 ] && arch=arm64; \
+    arch="${TARGETARCH:-$(go env GOARCH)}"; \
     case "$OC_MIRROR_FROM" in \
     source) \
       src=/tmp/oc-mirror-src; \
@@ -84,11 +88,12 @@ RUN set -eux; \
         curl -fsSL --retry 5 -o "$tarball" "https://mirror.openshift.com/pub/cgw/oc-mirror/latest/$file"; \
       fi; \
       tar --no-same-owner -xzf "$tarball" -C /out oc-mirror; \
-      strip /out/oc-mirror; \
+      if [ "$arch" = "$(go env GOHOSTARCH)" ]; then strip /out/oc-mirror; fi; \
       ;; \
     *) echo "OC_MIRROR_FROM must be 'source' or 'redhat', got '$OC_MIRROR_FROM'" >&2; exit 1 ;; \
     esac; \
-    /out/oc-mirror version --output=json
+    if [ "$arch" = "$(go env GOHOSTARCH)" ]; then /out/oc-mirror version --output=json; \
+    else echo "Built oc-mirror for $arch (not runnable on $(go env GOHOSTARCH); skipping version check)"; fi
 
 # Built-in catalog metadata: catalog-data-synced (injected by CI) or catalog-data, without raw configs.
 COPY . /ctx
