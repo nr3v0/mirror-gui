@@ -62,16 +62,22 @@ Tests use only the standard library. API tests drive the real `http.Handler` wit
 Runs Playwright browser tests using headless Chromium (port 3001 in CI against `go run ./cmd/mirror-gui` serving the built `dist/`, port 3000 locally against a running container).
 
 
-| File                         | Tests | Description                                                                                                                    |
-| ---------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `navigation.spec.ts`         | 12    | App loads, page title, sidebar nav items with correct routing, masthead title and version badge, sidebar toggle collapse/expand/persistence, dark theme class, logo image   |
-| `dashboard.spec.ts`          | 4     | Dashboard shows environment overview, operation stats cards, recent operations section, quick action buttons                    |
-| `mirrorConfig.spec.ts`       | 9     | Mirror Configuration page -- platform channels, operators (FieldBuilder + TypeaheadSelect), additional images, YAML preview, save/download, inline validation, digest toggle, load configuration   |
-| `mirrorOperations.spec.ts`   | 8     | Mirror Operations page -- config file selector, start/run controls, operation table, filter dropdown with status options, select all checkbox, Delete All button |
-| `history.spec.ts`            | 6     | History page -- title, filter controls, Export CSV button, filter dropdown with status options, select all checkbox, Delete All button |
-| `settings.spec.ts`           | 5     | Settings page -- Pull Secret/Registry/Cache/Sync Catalogs tabs, key fields visible, sync and clear buttons                       |
-| `configToOperations.spec.ts` | 1     | End-to-end workflow -- saves a YAML config via API, navigates to operations page, confirms it appears                          |
-| `pullSecret.spec.ts`         | 6     | Pull secret -- Dashboard pull secret status, Environment Status label, popover, Pull Secret tab, URL tab navigation, status persistence   |
+| File                           | Tests | Description |
+| ------------------------------ | ----- | ----------- |
+| `navigation.spec.ts`           | 12    | App loads, page title, sidebar nav items with correct routing, masthead title and version badge, sidebar toggle collapse/expand/persistence, dark theme class, logo image |
+| `dashboard.spec.ts`            | 12    | Dashboard shows environment overview, operation stats cards, recent operations section, quick action buttons |
+| `mirrorConfig.spec.ts`         | 9     | Mirror Configuration page -- platform channels, operators (FieldBuilder + TypeaheadSelect), additional images, YAML preview, save/download, inline validation, digest toggle, load configuration |
+| `platformChannels.spec.ts`     | 4     | Platform channel type (stable/fast/candidate/eus), EUS warning, future releases |
+| `mirrorOperations.spec.ts`     | 23    | Mirror Operations page -- config file selector, start/run controls, operation table, filter dropdown with status options, select all checkbox, Delete All button |
+| `operationLifecycle.spec.ts`   | 11    | Start, logs, stop, filter and delete an operation; row checkbox selection and Delete Selected on the Operations page |
+| `stopOperation.spec.ts`        | 6     | Stop via API persists after reload; stop confirmation modal confirm/cancel/close; Stop only on running operations; Stopped filter |
+| `startOperationErrors.spec.ts` | 11    | Start-operation errors -- API validation (missing config, invalid subdirectory, bad flags) and UI feedback (danger alerts, button states) |
+| `imageSources.spec.ts`         | 2     | Image Sources dialog -- Registries and Images tabs, image filter, copy to clipboard |
+| `history.spec.ts`              | 13    | History page -- title, filter controls, Export CSV button, filter dropdown, select all, Delete All; row checkbox selection and Delete Selected |
+| `settings.spec.ts`             | 6     | Settings page -- Pull Secret/Registry/Cache/Sync Catalogs tabs, key fields visible, sync and clear buttons |
+| `pullSecret.spec.ts`           | 6     | Pull secret -- Dashboard pull secret status, Environment Status label, popover, Pull Secret tab, URL tab navigation, status persistence |
+| `configToOperations.spec.ts`   | 1     | End-to-end workflow -- saves a YAML config via API, navigates to operations page, confirms it appears |
+| `fullMirrorWorkflow.spec.ts`   | 6     | Full workflow -- build a config in the UI, save it, run it and follow it through operations and history |
 
 
 Playwright reports are uploaded as CI artifacts (retained 14 days).
@@ -138,5 +144,5 @@ npm run audit:fetch-catalogs
 | ------------------ | ------ | ---------- |
 | Go (unit + API)    | 4      | 60         |
 | Scripts (Vitest)   | 3      | 10         |
-| E2E (Playwright)   | 13     | 102        |
-| **Total**          | **20** | **172**    |
+| E2E (Playwright)   | 14     | 122        |
+| **Total**          | **21** | **192**    |

@@ -1,5 +1,15 @@
 import { test, expect } from '@playwright/test';
 import { MINIMAL_ISC_YAML } from '../helpers/minimalConfig.js';
+import { seedOperation } from '../helpers/seedOperation.js';
+import {
+  assertRowCheckboxToggles,
+  assertMultiRowSelect,
+  assertSelectAllToggles,
+  assertDeleteSelectedButtonVisibility,
+  assertCancelModalKeepsRows,
+  assertDeleteSelectedRemovesOnlyChecked,
+  assertSelectAllDeleteRemovesAll,
+} from '../helpers/selectionTestUtils.js';
 
 // E2E tests for the mirror operation lifecycle: start, logs, stop, filter, delete.
 // Each test uses a timestamped config name. Cleanup is handled by afterAll.
@@ -143,19 +153,7 @@ test.describe('Operation Lifecycle', () => {
     const saveRes = await request.post('/api/config/save', { data: { config: MINIMAL_ISC_YAML, name: configName } });
     expect(saveRes.ok(), `Config save failed: ${await saveRes.text()}`).toBeTruthy();
 
-    const startRes = await request.post('/api/operations/start', { data: { configFile: configName } });
-    expect(startRes.ok()).toBeTruthy();
-    const { operationId } = await startRes.json();
-    createdOperations.push(operationId);
-
-    await request.post(`/api/operations/${operationId}/stop`);
-
-    await expect(async () => {
-      const res = await request.get('/api/operations');
-      const ops = await res.json();
-      const op = ops.find((o: { id: string }) => o.id === operationId);
-      expect(op?.status).toMatch(/success|failed|stopped/);
-    }).toPass({ timeout: 15000 });
+    await seedOperation(request, configName, createdOperations);
 
     await page.goto('/history');
     await expect(page.getByText('Operation History').first()).toBeVisible({ timeout: 15000 });
@@ -173,19 +171,7 @@ test.describe('Operation Lifecycle', () => {
     const saveRes = await request.post('/api/config/save', { data: { config: MINIMAL_ISC_YAML, name: configName } });
     expect(saveRes.ok(), `Config save failed: ${await saveRes.text()}`).toBeTruthy();
 
-    const startRes = await request.post('/api/operations/start', { data: { configFile: configName } });
-    expect(startRes.ok()).toBeTruthy();
-    const { operationId } = await startRes.json();
-    createdOperations.push(operationId);
-
-    await request.post(`/api/operations/${operationId}/stop`);
-
-    await expect(async () => {
-      const res = await request.get('/api/operations');
-      const ops = await res.json();
-      const op = ops.find((o: { id: string }) => o.id === operationId);
-      expect(op?.status).toMatch(/success|failed|stopped/);
-    }).toPass({ timeout: 15000 });
+    await seedOperation(request, configName, createdOperations);
 
     await page.goto('/operations');
     const historyCard = page.locator('#operation-history-card');
@@ -204,5 +190,94 @@ test.describe('Operation Lifecycle', () => {
     await bulkDeleteModal.getByRole('button', { name: 'Delete' }).click();
 
     await expect(operationRow).not.toBeVisible({ timeout: 15000 });
+  });
+});
+
+// Row checkbox selection and "Delete Selected" on the Operations page.
+// Separate describe block with its own seed data and cleanup.
+test.describe('Operations - Row Selection & Bulk Delete Selected', () => {
+  test.describe.configure({ mode: 'serial' });
+
+  const createdConfigs: string[] = [];
+  const createdOperations: string[] = [];
+
+  test.afterAll(async ({ request }) => {
+    for (const opId of createdOperations) {
+      await request.post(`/api/operations/${opId}/stop`).catch(() => {});
+      await request.delete(`/api/operations/${opId}`).catch(() => {});
+    }
+    for (const name of createdConfigs) {
+      await request.delete(`/api/config/delete/${name}`).catch(() => {});
+    }
+  });
+
+  test.beforeAll(async ({ request }) => {
+    createdConfigs.length = 0;
+    createdOperations.length = 0;
+
+    for (let i = 1; i <= 3; i++) {
+      const configName = `e2e-rowsel-${Date.now()}-${i}.yaml`;
+      createdConfigs.push(configName);
+
+      const saveRes = await request.post('/api/config/save', {
+        data: { config: MINIMAL_ISC_YAML, name: configName },
+      });
+      expect(saveRes.ok(), `Config save failed: ${await saveRes.text()}`).toBeTruthy();
+
+      await seedOperation(request, configName, createdOperations);
+    }
+  });
+
+  test('row checkbox toggles on click', async ({ page }) => {
+    await page.goto('/operations');
+    const table = page.locator('#operation-history-card table');
+    await expect(table).toBeVisible({ timeout: 15000 });
+    await assertRowCheckboxToggles(table, createdConfigs[0]);
+  });
+
+  test('checking multiple rows selects only those rows', async ({ page }) => {
+    await page.goto('/operations');
+    const table = page.locator('#operation-history-card table');
+    await expect(table).toBeVisible({ timeout: 15000 });
+    await assertMultiRowSelect(table, [createdConfigs[0], createdConfigs[2]], createdConfigs[1]);
+  });
+
+  test('select-all checkbox checks and unchecks every row', async ({ page }) => {
+    await page.goto('/operations');
+    const table = page.locator('#operation-history-card table');
+    await expect(table).toBeVisible({ timeout: 15000 });
+    await assertSelectAllToggles(table, createdConfigs);
+  });
+
+  test('"Delete Selected" button appears with correct count and hides after uncheck', async ({ page }) => {
+    await page.goto('/operations');
+    const card = page.locator('#operation-history-card');
+    const table = card.locator('table');
+    await expect(table).toBeVisible({ timeout: 15000 });
+    await assertDeleteSelectedButtonVisibility(table, card, [createdConfigs[0], createdConfigs[1]]);
+  });
+
+  test('cancelling the bulk-delete modal keeps all rows intact', async ({ page }) => {
+    await page.goto('/operations');
+    const card = page.locator('#operation-history-card');
+    const table = card.locator('table');
+    await expect(table).toBeVisible({ timeout: 15000 });
+    await assertCancelModalKeepsRows(page, table, card, createdConfigs, 'Confirm bulk deletion');
+  });
+
+  test('confirming "Delete Selected" removes only the checked row', async ({ page }) => {
+    await page.goto('/operations');
+    const card = page.locator('#operation-history-card');
+    const table = card.locator('table');
+    await expect(table).toBeVisible({ timeout: 15000 });
+    await assertDeleteSelectedRemovesOnlyChecked(page, table, card, createdConfigs[0], createdConfigs.slice(1), 'Confirm bulk deletion');
+  });
+
+  test('select-all then "Delete Selected" removes all remaining rows', async ({ page }) => {
+    await page.goto('/operations');
+    const card = page.locator('#operation-history-card');
+    const table = card.locator('table');
+    await expect(table).toBeVisible({ timeout: 15000 });
+    await assertSelectAllDeleteRemovesAll(page, table, card, createdConfigs.slice(1), 'Confirm bulk deletion', card);
   });
 });
