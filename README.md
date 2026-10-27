@@ -103,6 +103,8 @@ Visual configuration builder with tabs for Platform Channels, Operators, Additio
 
 Execute mirror operations with real-time monitoring. Select a saved configuration file, optionally specify a destination subdirectory, and start the operation. View operation history with logs, location info, and delete actions.
 
+The Operation Logs console streams oc-mirror output as it runs. Drag the handle under it to make it taller or shorter (or focus the handle and use the arrow keys; double-click resets it). The height is remembered in the browser. **Expand** fills the window with the logs, and **Collapse** or Escape returns them to the page.
+
 ![Mirror Operations](docs/screenshots/mirror-operations.png)
 
 ### History

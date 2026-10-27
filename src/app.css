@@ -6,3 +6,40 @@
 .pf-v6-c-timestamp.pf-m-help-text:is(:hover, :focus) {
   text-decoration-line: none !important;
 }
+
+/* Drag handle below the operation logs console, modelled on PatternFly's
+   resizable drawer splitter (.pf-v6-c-drawer__splitter). */
+.mirror-gui-resize-handle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 0.75rem;
+  margin-block-start: var(--pf-t--global--spacer--xs);
+  cursor: row-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.mirror-gui-resize-handle:focus-visible {
+  outline: var(--pf-t--global--border--width--strong) solid var(--pf-t--global--focus-ring--color--default);
+  outline-offset: -0.0625rem;
+  border-radius: var(--pf-t--global--border--radius--small);
+}
+
+.mirror-gui-resize-handle__grip {
+  width: 2.1875rem;
+  height: 0.25rem;
+  border-block: var(--pf-t--global--border--width--divider--default) solid var(--pf-t--global--border--color--high-contrast);
+  border-radius: var(--pf-t--global--border--radius--pill);
+  background-color: var(--pf-t--global--border--color--control--default);
+}
+
+.mirror-gui-resize-handle:hover .mirror-gui-resize-handle__grip {
+  border-color: var(--pf-t--global--color--brand--hover);
+  background-color: var(--pf-t--global--border--color--hover);
+}
+
+.mirror-gui-resize-handle:is(:focus-visible, :active) .mirror-gui-resize-handle__grip {
+  background-color: var(--pf-t--global--border--color--clicked);
+}

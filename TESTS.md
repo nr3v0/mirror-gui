@@ -72,6 +72,7 @@ Runs Playwright browser tests using headless Chromium (port 3001 in CI against `
 | `operationLifecycle.spec.ts`   | 11    | Start, logs, stop, filter and delete an operation; row checkbox selection and Delete Selected on the Operations page |
 | `stopOperation.spec.ts`        | 6     | Stop via API persists after reload; stop confirmation modal confirm/cancel/close; Stop only on running operations; Stopped filter |
 | `startOperationErrors.spec.ts` | 11    | Start-operation errors -- API validation (missing config, invalid subdirectory, bad flags) and UI feedback (danger alerts, button states) |
+| `operationLogs.spec.ts`        | 5     | Operation Logs console -- Expand fills the window and stays scrolled to the latest line; Collapse and Escape restore it; drag handle resizes (clamped, remembered across reloads), arrow/Home/End keys, double-click reset, hidden while expanded |
 | `imageSources.spec.ts`         | 2     | Image Sources dialog -- Registries and Images tabs, image filter, copy to clipboard |
 | `history.spec.ts`              | 13    | History page -- title, filter controls, Export CSV button, filter dropdown, select all, Delete All; row checkbox selection and Delete Selected |
 | `settings.spec.ts`             | 6     | Settings page -- Pull Secret/Registry/Cache/Sync Catalogs tabs, key fields visible, sync and clear buttons |
@@ -144,5 +145,5 @@ npm run audit:fetch-catalogs
 | ------------------ | ------ | ---------- |
 | Go (unit + API)    | 4      | 60         |
 | Scripts (Vitest)   | 3      | 10         |
-| E2E (Playwright)   | 14     | 122        |
-| **Total**          | **21** | **192**    |
+| E2E (Playwright)   | 15     | 127        |
+| **Total**          | **22** | **197**    |

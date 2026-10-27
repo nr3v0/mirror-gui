@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, type CSSProperties, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import {
   Card,
@@ -44,6 +45,7 @@ import {
   ExpandableSectionToggle,
   Switch,
   NumberInput,
+  Backdrop,
   SearchInput,
   Tab,
   Tabs,
@@ -67,10 +69,13 @@ import {
   TimesIcon,
   TrashAltIcon,
   SearchIcon,
+  ExpandIcon,
+  CompressIcon,
 } from '@patternfly/react-icons';
 import { Table, Thead, Tbody, Tr, Th, Td } from '@patternfly/react-table';
 import { useAlerts } from '../AlertContext';
 import { copyText } from '../utils/clipboard';
+import { ResizeHandle } from './ResizeHandle';
 
 interface ConfigFile {
   name: string;
@@ -94,6 +99,32 @@ interface Operation {
 interface RegistryCount {
   prefix: string;
   count: number;
+}
+
+const LOGS_HEIGHT_KEY = 'mirror-gui-logs-height';
+const LOGS_DEFAULT_HEIGHT = 400;
+const LOGS_MIN_HEIGHT = 120;
+
+// Tallest the inline logs console may be dragged: the window minus room for the card header.
+const logsMaxHeight = () => Math.max(LOGS_DEFAULT_HEIGHT, window.innerHeight - 160);
+
+function storedLogsHeight(): number {
+  try {
+    const value = Number(localStorage.getItem(LOGS_HEIGHT_KEY));
+    if (Number.isFinite(value) && value >= LOGS_MIN_HEIGHT) return value;
+  } catch {
+    // storage unavailable (private window, blocked site data)
+  }
+  return LOGS_DEFAULT_HEIGHT;
+}
+
+function saveLogsHeight(height: number | null) {
+  try {
+    if (height === null) localStorage.removeItem(LOGS_HEIGHT_KEY);
+    else localStorage.setItem(LOGS_HEIGHT_KEY, String(height));
+  } catch {
+    // storage unavailable; the height just isn't remembered
+  }
 }
 
 interface ImagePreview {
@@ -331,6 +362,8 @@ const MirrorOperations: React.FC = () => {
   const [logStream, setLogStream] = useState<EventSource | null>(null);
   const [loading, setLoading] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
+  const [logsExpanded, setLogsExpanded] = useState(false);
+  const [logsHeight, setLogsHeight] = useState(storedLogsHeight);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteFilename, setDeleteFilename] = useState('');
   const [deleteOperationId, setDeleteOperationId] = useState<string | null>(null);
@@ -574,7 +607,22 @@ const MirrorOperations: React.FC = () => {
         logContainer.scrollTop = logContainer.scrollHeight;
       }
     }
-  }, [logs, showLogs]);
+  }, [logs, showLogs, logsExpanded, logsHeight]);
+
+  // The expanded logs console covers the window: lock page scrolling and let Escape collapse it.
+  useEffect(() => {
+    if (!logsExpanded) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setLogsExpanded(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [logsExpanded]);
 
   useEffect(() => {
     const hasRunning = operations.some((op) => op.status === 'running');
@@ -828,6 +876,82 @@ const MirrorOperations: React.FC = () => {
     ? filteredOps.length
     : filteredOps.filter(op => checkedOpIds.has(op.id)).length;
 
+
+  const logsCard = (
+    <Card
+      className="pf-v6-u-mt-lg"
+      id="operation-logs-card"
+      aria-label="Operation logs"
+      style={logsExpanded ? {
+        position: 'fixed',
+        inset: 'var(--pf-t--global--spacer--md)',
+        margin: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        boxShadow: 'var(--pf-t--global--box-shadow--lg)',
+      } : undefined}
+    >
+      <CardHeader>
+        <Flex justifyContent={{ default: 'justifyContentSpaceBetween' }} alignItems={{ default: 'alignItemsCenter' }}>
+          <FlexItem>
+            <CardTitle>
+              <Title headingLevel="h4">
+                Operation Logs
+              </Title>
+            </CardTitle>
+          </FlexItem>
+          <FlexItem>
+            <Flex spaceItems={{ default: 'spaceItemsSm' }}>
+              <FlexItem>
+                <Button
+                  variant="secondary"
+                  icon={logsExpanded ? <CompressIcon /> : <ExpandIcon />}
+                  onClick={() => setLogsExpanded(expanded => !expanded)}
+                  aria-pressed={logsExpanded}
+                >
+                  {logsExpanded ? 'Collapse' : 'Expand'}
+                </Button>
+              </FlexItem>
+              {!logsExpanded && (
+                <FlexItem>
+                  <Button variant="secondary" icon={<AngleUpIcon />} onClick={scrollToOperations}>
+                    Back to Top
+                  </Button>
+                </FlexItem>
+              )}
+            </Flex>
+          </FlexItem>
+        </Flex>
+      </CardHeader>
+      <CardBody style={logsExpanded ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } : undefined}>
+        <div
+          id="log-container"
+          style={logsExpanded
+            ? { flex: 1, minHeight: 0, overflow: 'auto' }
+            : { maxHeight: `${Math.min(logsHeight, logsMaxHeight())}px`, overflow: 'auto' }}
+        >
+          <CodeBlock style={logsExpanded ? { minHeight: '100%' } : undefined}>
+            <CodeBlockCode>{logs || 'No logs available'}</CodeBlockCode>
+          </CodeBlock>
+        </div>
+        {!logsExpanded && (
+          <ResizeHandle
+            controls="log-container"
+            label="Resize operation logs"
+            height={Math.min(logsHeight, logsMaxHeight())}
+            minHeight={LOGS_MIN_HEIGHT}
+            maxHeight={logsMaxHeight()}
+            onResize={setLogsHeight}
+            onResizeEnd={saveLogsHeight}
+            onReset={() => {
+              setLogsHeight(LOGS_DEFAULT_HEIGHT);
+              saveLogsHeight(null);
+            }}
+          />
+        )}
+      </CardBody>
+    </Card>
+  );
   return (
     <div>
       <Card>
@@ -1513,33 +1637,9 @@ const MirrorOperations: React.FC = () => {
         </CardBody>
       </Card>
 
-      {showLogs && (
-        <Card className="pf-v6-u-mt-lg" id="operation-logs-card">
-          <CardHeader>
-            <Flex justifyContent={{ default: 'justifyContentSpaceBetween' }} alignItems={{ default: 'alignItemsCenter' }}>
-              <FlexItem>
-                <CardTitle>
-                  <Title headingLevel="h4">
-                    Operation Logs
-                  </Title>
-                </CardTitle>
-              </FlexItem>
-              <FlexItem>
-                <Button variant="secondary" icon={<AngleUpIcon />} onClick={scrollToOperations}>
-                  Back to Top
-                </Button>
-              </FlexItem>
-            </Flex>
-          </CardHeader>
-          <CardBody>
-            <div id="log-container" style={{ maxHeight: '400px', overflow: 'auto' }}>
-              <CodeBlock>
-                <CodeBlockCode>{logs || 'No logs available'}</CodeBlockCode>
-              </CodeBlock>
-            </div>
-          </CardBody>
-        </Card>
-      )}
+      {/* Expanded, the logs card is portaled to <body>: the page layout's stacking
+          context would otherwise keep it beneath the masthead and sidebar. */}
+      {showLogs && (logsExpanded ? createPortal(<Backdrop>{logsCard}</Backdrop>, document.body) : logsCard)}
 
       <Modal
         variant={ModalVariant.small}
