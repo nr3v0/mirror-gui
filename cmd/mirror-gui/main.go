@@ -15,14 +15,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/nr3v0/mirror-gui/internal/catalogmeta"
-	"github.com/nr3v0/mirror-gui/internal/ocmirrorbin"
 	"github.com/nr3v0/mirror-gui/internal/server"
 )
 
@@ -70,48 +68,11 @@ func serve() error {
 	if err := dropPrivileges(cfg); err != nil {
 		return err
 	}
-	useRedHatOcMirror(&cfg)
 	srv := server.New(cfg)
+	srv.InitOcMirror(os.Getenv("OC_MIRROR_BINARY"))
 	srv.ClearOperationHistory()
 	srv.LogStartup()
 	return http.ListenAndServe(":"+cfg.Port, srv)
-}
-
-// useRedHatOcMirror replaces the built-in oc-mirror with Red Hat's official
-// binary when OC_MIRROR_BINARY=redhat. The binary is downloaded from
-// OC_MIRROR_REDHAT_URL (default mirror.openshift.com), verified against the
-// published sha256sum.txt and cached under the data directory. Any failure is
-// logged and the built-in oc-mirror is used instead.
-func useRedHatOcMirror(cfg *server.Config) {
-	switch v := os.Getenv("OC_MIRROR_BINARY"); v {
-	case "", "built-in":
-		return
-	case "redhat":
-	default:
-		log.Printf("WARNING: ignoring OC_MIRROR_BINARY=%q (expected \"redhat\" or \"built-in\")", v)
-		return
-	}
-	cacheDir, err := filepath.Abs(filepath.Join(cfg.StorageDir, "bin"))
-	if err != nil {
-		log.Printf("WARNING: OC_MIRROR_BINARY=redhat: %v; using the built-in oc-mirror", err)
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	defer cancel()
-	path, err := ocmirrorbin.Fetch(ctx, ocmirrorbin.Options{
-		BaseURL:  os.Getenv("OC_MIRROR_REDHAT_URL"),
-		CacheDir: cacheDir,
-		Log:      func(line string) { log.Print(line) },
-	})
-	if err == nil {
-		_, err = ocmirrorbin.Version(ctx, path)
-	}
-	if err != nil {
-		log.Printf("WARNING: OC_MIRROR_BINARY=redhat: %v; using the built-in oc-mirror", err)
-		return
-	}
-	cfg.OcMirrorPath, cfg.OcMirrorSource = path, "redhat-runtime"
-	log.Printf("Using Red Hat oc-mirror: %s", path)
 }
 
 func envOr(key, fallback string) string {

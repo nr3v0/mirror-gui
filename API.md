@@ -107,7 +107,7 @@ Get system information including versions, disk space, architecture, and cache d
 
 **Response Fields:**
 - `appVersion`: The mirror-gui version the server was built with (`dev` for local builds)
-- `ocMirrorSource`: Where the active oc-mirror came from: `source` (compiled into the image from source), `redhat` (Red Hat's binary built into the image), `redhat-runtime` (Red Hat's binary downloaded at start-up via `OC_MIRROR_BINARY=redhat`), or empty when running outside the image
+- `ocMirrorSource`: Where the active oc-mirror came from: `source` (compiled into the image from source), `redhat` (Red Hat's binary built into the image), `redhat-runtime` (Red Hat's official binary, downloaded when selected on the Dashboard or at start-up via `OC_MIRROR_BINARY=redhat`), or empty when running outside the image
 - `hostDataDir`: The host-side data directory path
 - `cacheDir`: The cache directory inside the container
 - `hostCacheDir`: The cache directory mapped to the host path
@@ -152,6 +152,43 @@ Get available system paths for mirror storage and other operations.
   ]
 }
 ```
+
+#### GET /api/system/oc-mirror
+Get which oc-mirror binary new operations run.
+
+**Response:**
+```json
+{
+  "selected": "built-in",
+  "source": "source",
+  "version": "2.0.0",
+  "builtInSource": "source",
+  "redhatDownloaded": false,
+  "switching": false
+}
+```
+
+**Response Fields:**
+- `selected`: `built-in` (the binary in the image) or `redhat` (Red Hat's official download)
+- `source`: Where the active binary came from (same values as `ocMirrorSource` in `/api/system/info`)
+- `version`: The active binary's version
+- `builtInSource`: How the built-in binary was made: `source`, `redhat`, or empty outside the image
+- `redhatDownloaded`: Whether a verified copy of Red Hat's binary is cached in `data/bin`
+- `switching`: Whether a change is in progress (for example, a download)
+
+#### PUT /api/system/oc-mirror
+Choose the oc-mirror binary for new operations. Selecting `redhat` downloads Red Hat's latest published binary from mirror.openshift.com (or `OC_MIRROR_REDHAT_URL`) when the cached copy is missing or out of date, verifies it against the published `sha256sum.txt`, and checks that it runs, so the request can take a minute. When the download site cannot be reached, a copy verified by an earlier download is used. The choice is saved in `data/oc-mirror.json` and takes precedence over `OC_MIRROR_BINARY` on later starts. Operations that are already running keep the binary they started with.
+
+**Request Body:**
+```json
+{
+  "binary": "redhat"
+}
+```
+
+**Response:** The new state, as returned by `GET /api/system/oc-mirror`.
+
+**Errors:** `400` for a `binary` other than `built-in` or `redhat`; `409` while another change is in progress; `502` when Red Hat's binary cannot be downloaded, verified or run (the current binary stays selected).
 
 #### GET /api/mirror-folders
 Get list of existing subdirectories under the mirror base directory. Used by the Mirror Destination Folder typeahead to suggest existing folders.

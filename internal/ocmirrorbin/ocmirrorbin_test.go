@@ -136,3 +136,23 @@ func TestFetchErrors(t *testing.T) {
 		t.Errorf("404 err = %v", err)
 	}
 }
+
+func TestCached(t *testing.T) {
+	dir := t.TempDir()
+	if _, ok := Cached(dir); ok {
+		t.Fatal("Cached reported a binary in an empty directory")
+	}
+	m := serve(t, tarball(t, "oc-mirror", fakeBinary), "")
+	path, err := Fetch(context.Background(), Options{BaseURL: m.URL, Arch: "amd64", CacheDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := Cached(dir); !ok || got != path {
+		t.Fatalf("Cached() = %q, %v; want %q, true", got, ok, path)
+	}
+	// A binary without its recorded checksum was never verified.
+	os.Remove(path + ".sha256")
+	if _, ok := Cached(dir); ok {
+		t.Fatal("Cached reported a binary without a recorded checksum")
+	}
+}

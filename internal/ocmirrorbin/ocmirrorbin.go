@@ -151,6 +151,19 @@ func Version(ctx context.Context, path string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// Cached returns the binary a previous Fetch downloaded and verified into
+// cacheDir, if there is one. It needs no network access.
+func Cached(cacheDir string) (string, bool) {
+	binary := filepath.Join(cacheDir, "oc-mirror-redhat")
+	if _, err := os.Stat(binary + ".sha256"); err != nil {
+		return "", false
+	}
+	if info, err := os.Stat(binary); err != nil || !info.Mode().IsRegular() {
+		return "", false
+	}
+	return binary, true
+}
+
 // Fetch returns the path of Red Hat's current oc-mirror for this architecture.
 // It verifies the download against the published sha256sum.txt and keeps the
 // binary in CacheDir, downloading again only when Red Hat publishes a new build.

@@ -398,7 +398,8 @@ func (s *Server) handleOperationStart(w http.ResponseWriter, r *http.Request) {
 	}
 	args = append(args, mirrorURL)
 
-	cmd := exec.Command(s.cfg.OcMirrorPath, args...)
+	ocMirror, _ := s.ocMirrorBinary()
+	cmd := exec.Command(ocMirror, args...)
 	cmd.Dir = s.cfg.AppRootDir
 	cmd.Stdout = output
 	cmd.Stderr = output

@@ -882,25 +882,6 @@ func TestOperationRunSuccessPassesFlags(t *testing.T) {
 	}
 }
 
-func TestOperationUsesConfiguredOcMirrorPath(t *testing.T) {
-	e := newTestEnv(t)
-	installFakeOcMirror(t, `echo "from PATH"; exit 1`)
-	custom := filepath.Join(t.TempDir(), "oc-mirror-redhat")
-	if err := os.WriteFile(custom, []byte("#!/bin/sh\necho 'GitVersion:\"9.9.9\"'\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	e.srv.cfg.OcMirrorPath, e.srv.cfg.OcMirrorSource = custom, "redhat-runtime"
-
-	id := e.startOperation(map[string]any{})
-	if op := e.waitForStatus(id, "success", "failed"); op["status"] != "success" {
-		t.Errorf("operation = %v (ran the oc-mirror on PATH?)", op)
-	}
-	info := e.do("GET", "/api/system/info", nil).obj()
-	if info["ocMirrorVersion"] != "9.9.9" || info["ocMirrorSource"] != "redhat-runtime" {
-		t.Errorf("info = %v", info)
-	}
-}
-
 func TestOperationRunFailureExtractsError(t *testing.T) {
 	e := newTestEnv(t)
 	installFakeOcMirror(t, `echo "2026/01/02 03:04:05  [ERROR]  : unable to reach registry" >&2; exit 1`)

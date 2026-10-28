@@ -31,9 +31,11 @@ import {
   KeyIcon,
   InfoCircleIcon,
   OutlinedClockIcon,
+  PencilAltIcon,
 } from '@patternfly/react-icons';
 import { Table, Thead, Tbody, Tr, Th, Td } from '@patternfly/react-table';
 import { useAlerts } from '../AlertContext';
+import { OcMirrorBinaryModal, OC_MIRROR_SOURCE_LABELS } from './OcMirrorBinaryModal';
 
 interface Stats {
   totalOperations: number;
@@ -65,13 +67,6 @@ interface SystemInfo {
   hostCacheDir: string;
   cacheSizeBytes: number;
 }
-
-// Where the active oc-mirror binary came from (ocMirrorSource in /api/system/info).
-const OC_MIRROR_SOURCE_LABELS: Record<string, string> = {
-  source: 'Built from source',
-  redhat: 'Red Hat build',
-  'redhat-runtime': 'Red Hat build (downloaded)',
-};
 
 type LabelStatus = 'success' | 'warning' | 'danger' | 'info' | 'custom';
 
@@ -173,6 +168,7 @@ const Dashboard: React.FC = () => {
     cacheSizeBytes: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [ocMirrorModalOpen, setOcMirrorModalOpen] = useState(false);
 
   const formatBytes = (bytes: number): string => {
     if (!bytes) return 'Unknown';
@@ -261,7 +257,17 @@ const Dashboard: React.FC = () => {
                   OC Mirror Version
                 </DescriptionListTerm>
                 <DescriptionListDescription>
-                  {systemStatus.ocMirrorVersion || 'Not available'}
+                  <Button
+                    variant="link"
+                    isInline
+                    icon={<PencilAltIcon />}
+                    iconPosition="end"
+                    aria-haspopup="dialog"
+                    aria-label={`oc-mirror ${systemStatus.ocMirrorVersion || 'not available'}: choose binary`}
+                    onClick={() => setOcMirrorModalOpen(true)}
+                  >
+                    {systemStatus.ocMirrorVersion || 'Not available'}
+                  </Button>
                   {OC_MIRROR_SOURCE_LABELS[systemInfo.ocMirrorSource ?? ''] && (
                     <Label isCompact color="grey" className="pf-v6-u-ml-sm">
                       {OC_MIRROR_SOURCE_LABELS[systemInfo.ocMirrorSource ?? '']}
@@ -448,6 +454,11 @@ const Dashboard: React.FC = () => {
         </Card>
       </PageSection>
 
+      <OcMirrorBinaryModal
+        isOpen={ocMirrorModalOpen}
+        onClose={() => setOcMirrorModalOpen(false)}
+        onChanged={() => void fetchDashboardData()}
+      />
     </>
   );
 };

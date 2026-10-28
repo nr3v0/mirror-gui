@@ -146,9 +146,10 @@ LABEL org.opencontainers.image.created="${BUILD_DATE}" \
 
 WORKDIR /app
 # The server starts as root, fixes ownership of mounted data, then runs as uid 1001.
-# OC_MIRROR_BUILT_FROM records where the built-in oc-mirror came from. Set
-# OC_MIRROR_BINARY=redhat at run time to download and use Red Hat's official
-# oc-mirror instead (verified, cached in /app/data/bin; needs internet access).
+# OC_MIRROR_BUILT_FROM records where the built-in oc-mirror came from. Choose
+# "Official Red Hat Download" on the Dashboard, or set OC_MIRROR_BINARY=redhat,
+# to download and use Red Hat's official oc-mirror instead (verified, cached in
+# /app/data/bin).
 ENV HOME=/app PATH=/usr/local/bin MIRROR_GUI_RUN_AS=1001:0 OC_MIRROR_BUILT_FROM=${OC_MIRROR_FROM}
 EXPOSE 3001
 ENTRYPOINT ["/app/mirror-gui"]

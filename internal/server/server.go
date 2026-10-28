@@ -37,10 +37,13 @@ type Config struct {
 	BuiltinCatalogDir  string
 	DistDir            string
 	HostDataDir        string
-	// OcMirrorPath is the oc-mirror executable (looked up on PATH when it has no slash).
+	// OcMirrorPath is the built-in oc-mirror executable (looked up on PATH when it has no slash).
 	OcMirrorPath string
 	// OcMirrorSource describes where that binary came from, e.g. "source" or "redhat".
 	OcMirrorSource string
+	// OcMirrorRedHatURL is where Red Hat's official oc-mirror is downloaded from
+	// (OC_MIRROR_REDHAT_URL); empty means mirror.openshift.com.
+	OcMirrorRedHatURL string
 	// CatalogVersions are the OpenShift releases the catalog sync fetches
 	// (CATALOG_OCP_VERSIONS); empty means catalogmeta.DefaultOCPVersions.
 	CatalogVersions []string
@@ -88,6 +91,7 @@ func ConfigFromEnv() Config {
 		HostDataDir:        os.Getenv("HOST_DATA_DIR"),
 		OcMirrorPath:       "oc-mirror",
 		OcMirrorSource:     os.Getenv("OC_MIRROR_BUILT_FROM"),
+		OcMirrorRedHatURL:  os.Getenv("OC_MIRROR_REDHAT_URL"),
 	}
 }
 
@@ -119,6 +123,13 @@ type Server struct {
 	syncMu    sync.Mutex
 	syncState catalogSyncState
 
+	// The oc-mirror binary new operations run (see ocmirror.go).
+	ocMirrorMu        sync.Mutex
+	ocMirrorChoice    string // ocMirrorBuiltIn or ocMirrorRedHat
+	ocMirrorPath      string
+	ocMirrorSource    string
+	ocMirrorSwitching bool
+
 	// Catalogs synced by POST /api/catalogs/sync, the registry they are pulled
 	// from (empty means registry.redhat.io), and the delay between retries.
 	syncRegistry     string
@@ -148,6 +159,7 @@ func New(cfg Config) *Server {
 		s.syncVersions = cfg.CatalogVersions
 	}
 	s.syncState = s.newCatalogSyncState()
+	s.setOcMirror(ocMirrorBuiltIn, cfg.OcMirrorPath, cfg.OcMirrorSource)
 	s.ensureDirectories()
 	s.detectPullSecret()
 	s.handler = s.routes()
@@ -167,6 +179,8 @@ func (s *Server) routes() http.Handler {
 	handle("GET /api/system/status", s.handleSystemStatus)
 	handle("GET /api/system/info", s.handleSystemInfo)
 	handle("GET /api/system/paths", s.handleSystemPaths)
+	handle("GET /api/system/oc-mirror", s.handleOcMirrorGet)
+	handle("PUT /api/system/oc-mirror", s.handleOcMirrorSelect)
 
 	handle("GET /api/pull-secret/status", s.handlePullSecretStatus)
 	handle("GET /api/pull-secret/content", s.handlePullSecretContent)
